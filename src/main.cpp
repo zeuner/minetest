@@ -289,6 +289,8 @@ static void set_allowed_options(OptionList *allowed_options)
 			_("Migrate from current map backend to another (Only works when using minetestserver or with --server)"))));
 	allowed_options->insert(std::make_pair("migrate-players", ValueSpec(VALUETYPE_STRING,
 		_("Migrate from current players backend to another (Only works when using minetestserver or with --server)"))));
+	allowed_options->insert(std::make_pair("migrate-auth", ValueSpec(VALUETYPE_STRING,
+		_("Migrate from current auth backend to another (Only works when using minetestserver or with --server)"))));
 	allowed_options->insert(std::make_pair("terminal", ValueSpec(VALUETYPE_FLAG,
 			_("Feature an interactive terminal (Only works when using minetestserver or with --server)"))));
 #ifndef SERVER
@@ -530,11 +532,8 @@ static bool read_config_file(const Settings &cmd_args)
 
 static void init_log_streams(const Settings &cmd_args)
 {
-#if RUN_IN_PLACE
-	std::string log_filename = DEBUGFILE;
-#else
 	std::string log_filename = porting::path_user + DIR_DELIM + DEBUGFILE;
-#endif
+
 	if (cmd_args.exists("logfile"))
 		log_filename = cmd_args.get("logfile");
 
@@ -839,6 +838,9 @@ static bool run_dedicated_server(const GameParams &game_params, const Settings &
 
 	if (cmd_args.exists("migrate-players"))
 		return ServerEnvironment::migratePlayersDatabase(game_params, cmd_args);
+
+	if (cmd_args.exists("migrate-auth"))
+		return ServerEnvironment::migrateAuthDatabase(game_params, cmd_args);
 
 	if (cmd_args.exists("terminal")) {
 #if USE_CURSES
