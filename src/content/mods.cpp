@@ -333,6 +333,7 @@ void ModConfiguration::resolveDependencies()
 	// Step 1: Compile a list of the mod names we're working with
 	std::set<std::string> modnames;
 	for (const ModSpec &mod : m_unsatisfied_mods) {
+		verbosestream << "DEBUG: mod to resolve: " << mod.name << std::endl;
 		modnames.insert(mod.name);
 	}
 
