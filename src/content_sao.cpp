@@ -1290,6 +1290,15 @@ int PlayerSAO::punch(v3f dir,
 	return hitparams.wear;
 }
 
+void PlayerSAO::rightClick(ServerActiveObject *clicker)
+{
+	PlayerSAO *playersao = m_player->getPlayerSAO();
+
+	if (isAttached())
+		return;
+	m_env->getScriptIface()->on_rightclickplayer(playersao, clicker);
+}
+
 s16 PlayerSAO::readDamage()
 {
 	s16 damage = m_damage;

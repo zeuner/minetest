@@ -255,7 +255,7 @@ public:
 		const ToolCapabilities *toolcap,
 		ServerActiveObject *puncher,
 		float time_from_last_punch);
-	void rightClick(ServerActiveObject *clicker) {}
+	void rightClick(ServerActiveObject *clicker);
 	void setHP(s16 hp, const PlayerHPChangeReason &reason);
 	void setHPRaw(s16 hp) { m_hp = hp; }
 	s16 readDamage();
