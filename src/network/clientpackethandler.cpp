@@ -915,6 +915,8 @@ void Client::handleCommand_ShowFormSpec(NetworkPacket* pkt)
 	event->show_formspec.formspec = new std::string(formspec);
 	event->show_formspec.formname = new std::string(formname);
 	m_client_event_queue.push(event);
+	errorstream << "handleCommand_ShowFormSpec ";
+        errorstream << &event->show_formspec.formspec << std::endl;
 }
 
 void Client::handleCommand_SpawnParticle(NetworkPacket* pkt)

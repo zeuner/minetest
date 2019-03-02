@@ -2570,6 +2570,8 @@ void Game::handleClientEvent_Deathscreen(ClientEvent *event, CameraOrientation *
 
 void Game::handleClientEvent_ShowFormSpec(ClientEvent *event, CameraOrientation *cam)
 {
+	errorstream << "handleClientEvent_ShowFormSpec ";
+        errorstream << &event->show_formspec.formspec << std::endl;
 	if (event->show_formspec.formspec->empty()) {
 		if (current_formspec && (event->show_formspec.formname->empty()
 			|| *(event->show_formspec.formname) == cur_formname)) {
