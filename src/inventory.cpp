@@ -257,17 +257,8 @@ ItemStack ItemStack::addItem(ItemStack newitem, IItemDefManager *itemdef)
 	// If this is an empty item, it's an easy job.
 	else if(empty())
 	{
-		const u16 stackMax = newitem.getStackMax(itemdef);
-
 		*this = newitem;
-
-		// If the item fits fully, delete it
-		if (count <= stackMax) {
-			newitem.clear();
-		} else { // Else the item does not fit fully. Return the rest.
-			count = stackMax;
-			newitem.remove(count);
-		}
+		newitem.clear();
 	}
 	// If item name or metadata differs, bail out
 	else if (name != newitem.name
@@ -306,14 +297,7 @@ bool ItemStack::itemFits(ItemStack newitem,
 	// If this is an empty item, it's an easy job.
 	else if(empty())
 	{
-		const u16 stackMax = newitem.getStackMax(itemdef);
-
-		// If the item fits fully, delete it
-		if (newitem.count <= stackMax) {
-			newitem.clear();
-		} else { // Else the item does not fit fully. Return the rest.
-			newitem.remove(stackMax);
-		}
+		newitem.clear();
 	}
 	// If item name or metadata differs, bail out
 	else if (name != newitem.name
@@ -335,6 +319,7 @@ bool ItemStack::itemFits(ItemStack newitem,
 
 	if(restitem)
 		*restitem = newitem;
+
 	return newitem.empty();
 }
 
@@ -436,8 +421,7 @@ void InventoryList::deSerialize(std::istream &is)
 	u32 item_i = 0;
 	m_width = 0;
 
-	for(;;)
-	{
+	while (is.good()) {
 		std::string line;
 		std::getline(is, line, '\n');
 
@@ -447,14 +431,12 @@ void InventoryList::deSerialize(std::istream &is)
 		std::string name;
 		std::getline(iss, name, ' ');
 
-		if (name == "EndInventoryList") {
-			break;
-		}
+		if (name == "EndInventoryList")
+			return;
 
 		// This is a temporary backwards compatibility fix
-		if (name == "end") {
-			break;
-		}
+		if (name == "end")
+			return;
 
 		if (name == "Width") {
 			iss >> m_width;
@@ -476,6 +458,14 @@ void InventoryList::deSerialize(std::istream &is)
 			m_items[item_i++].clear();
 		}
 	}
+
+	// Contents given to deSerialize() were not terminated properly: throw error.
+
+	std::ostringstream ss;
+	ss << "Malformatted inventory list. list="
+		<< m_name << ", read " << item_i << " of " << getSize()
+		<< " ItemStacks." << std::endl;
+	throw SerializationError(ss.str());
 }
 
 InventoryList::InventoryList(const InventoryList &other)
@@ -503,14 +493,9 @@ bool InventoryList::operator == (const InventoryList &other) const
 		return false;
 	if(m_name != other.m_name)
 		return false;
-	for(u32 i=0; i<m_items.size(); i++)
-	{
-		ItemStack s1 = m_items[i];
-		ItemStack s2 = other.m_items[i];
-		if(s1.name != s2.name || s1.wear!= s2.wear || s1.count != s2.count ||
-				s1.metadata != s2.metadata)
+	for (u32 i = 0; i < m_items.size(); i++)
+		if (m_items[i] != other.m_items[i])
 			return false;
-	}
 
 	return true;
 }
@@ -859,8 +844,7 @@ void Inventory::deSerialize(std::istream &is)
 {
 	clear();
 
-	for(;;)
-	{
+	while (is.good()) {
 		std::string line;
 		std::getline(is, line, '\n');
 
@@ -869,14 +853,12 @@ void Inventory::deSerialize(std::istream &is)
 		std::string name;
 		std::getline(iss, name, ' ');
 
-		if (name == "EndInventory") {
-			break;
-		}
+		if (name == "EndInventory")
+			return;
 
 		// This is a temporary backwards compatibility fix
-		if (name == "end") {
-			break;
-		}
+		if (name == "end")
+			return;
 
 		if (name == "List") {
 			std::string listname;
@@ -895,6 +877,13 @@ void Inventory::deSerialize(std::istream &is)
 			throw SerializationError("invalid inventory specifier: " + name);
 		}
 	}
+
+	// Contents given to deSerialize() were not terminated properly: throw error.
+
+	std::ostringstream ss;
+	ss << "Malformatted inventory (damaged?). "
+		<< m_lists.size() << " lists read." << std::endl;
+	throw SerializationError(ss.str());
 }
 
 InventoryList * Inventory::addList(const std::string &name, u32 size)

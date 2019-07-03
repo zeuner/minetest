@@ -17,15 +17,15 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#include "client.h"
+#include "client/client.h"
 
 #include "util/base64.h"
 #include "chatmessage.h"
-#include "clientmedia.h"
+#include "client/clientmedia.h"
 #include "log.h"
 #include "map.h"
 #include "mapsector.h"
-#include "minimap.h"
+#include "client/minimap.h"
 #include "modchannels.h"
 #include "nodedef.h"
 #include "serialization.h"
@@ -97,8 +97,10 @@ void Client::handleCommand_Hello(NetworkPacket* pkt)
 
 	// Authenticate using that method, or abort if there wasn't any method found
 	if (chosen_auth_mechanism != AUTH_MECHANISM_NONE) {
-		if (chosen_auth_mechanism == AUTH_MECHANISM_FIRST_SRP
-				&& !m_simple_singleplayer_mode) {
+		if (chosen_auth_mechanism == AUTH_MECHANISM_FIRST_SRP &&
+				!m_simple_singleplayer_mode &&
+				!getServerAddress().isLocalhost() &&
+				g_settings->getBool("enable_register_confirmation")) {
 			promptConfirmRegistration(chosen_auth_mechanism);
 		} else {
 			startAuth(chosen_auth_mechanism);
@@ -243,6 +245,33 @@ void Client::handleCommand_AddNode(NetworkPacket* pkt)
 
 	addNode(p, n, remove_metadata);
 }
+
+void Client::handleCommand_NodemetaChanged(NetworkPacket *pkt)
+{
+	if (pkt->getSize() < 1)
+		return;
+
+	std::istringstream is(pkt->readLongString(), std::ios::binary);
+	std::stringstream sstr;
+	decompressZlib(is, sstr);
+
+	NodeMetadataList meta_updates_list(false);
+	meta_updates_list.deSerialize(sstr, m_itemdef, true);
+
+	Map &map = m_env.getMap();
+	for (NodeMetadataMap::const_iterator i = meta_updates_list.begin();
+			i != meta_updates_list.end(); ++i) {
+		v3s16 pos = i->first;
+
+		if (map.isValidPosition(pos) &&
+				map.setNodeMetadata(pos, i->second))
+			continue; // Prevent from deleting metadata
+
+		// Meta couldn't be set, unused metadata
+		delete i->second;
+	}
+}
+
 void Client::handleCommand_BlockData(NetworkPacket* pkt)
 {
 	// Ignore too small packet
@@ -379,17 +408,19 @@ void Client::handleCommand_ChatMessage(NetworkPacket *pkt)
 		return;
 	}
 
-	*pkt >> chatMessage->sender >> chatMessage->message >> chatMessage->timestamp;
+	u64 timestamp;
+	*pkt >> chatMessage->sender >> chatMessage->message >> timestamp;
+	chatMessage->timestamp = static_cast<std::time_t>(timestamp);
 
 	chatMessage->type = (ChatMessageType) message_type;
 
 	// @TODO send this to CSM using ChatMessage object
-	if (!moddingEnabled() || !m_script->on_receiving_message(
+	if (moddingEnabled() && m_script->on_receiving_message(
 			wide_to_utf8(chatMessage->message))) {
-		pushToChatQueue(chatMessage);
-	} else {
-		// Message was consumed by CSM and should not handled by client, destroying
+		// Message was consumed by CSM and should not be handled by client
 		delete chatMessage;
+	} else {
+		pushToChatQueue(chatMessage);
 	}
 }
 
@@ -843,21 +874,34 @@ void Client::handleCommand_InventoryFormSpec(NetworkPacket* pkt)
 
 void Client::handleCommand_DetachedInventory(NetworkPacket* pkt)
 {
-	std::string datastring(pkt->getString(0), pkt->getSize());
-	std::istringstream is(datastring, std::ios_base::binary);
-
-	std::string name = deSerializeString(is);
+	std::string name;
+	bool keep_inv = true;
+	*pkt >> name >> keep_inv;
 
 	infostream << "Client: Detached inventory update: \"" << name
-			<< "\"" << std::endl;
+		<< "\", mode=" << (keep_inv ? "update" : "remove") << std::endl;
 
-	Inventory *inv = NULL;
-	if (m_detached_inventories.count(name) > 0)
-		inv = m_detached_inventories[name];
-	else {
+	const auto &inv_it = m_detached_inventories.find(name);
+	if (!keep_inv) {
+		if (inv_it != m_detached_inventories.end()) {
+			delete inv_it->second;
+			m_detached_inventories.erase(inv_it);
+		}
+		return;
+	}
+	Inventory *inv = nullptr;
+	if (inv_it == m_detached_inventories.end()) {
 		inv = new Inventory(m_itemdef);
 		m_detached_inventories[name] = inv;
+	} else {
+		inv = inv_it->second;
 	}
+
+	u16 ignore;
+	*pkt >> ignore; // this used to be the length of the following string, ignore it
+
+	std::string contents = pkt->getRemainingString();
+	std::istringstream is(contents, std::ios::binary);
 	inv->deSerialize(is);
 }
 
@@ -882,11 +926,11 @@ void Client::handleCommand_SpawnParticle(NetworkPacket* pkt)
 	std::string datastring(pkt->getString(0), pkt->getSize());
 	std::istringstream is(datastring, std::ios_base::binary);
 
-	v3f pos                 = readV3F1000(is);
-	v3f vel                 = readV3F1000(is);
-	v3f acc                 = readV3F1000(is);
-	float expirationtime    = readF1000(is);
-	float size              = readF1000(is);
+	v3f pos                 = readV3F32(is);
+	v3f vel                 = readV3F32(is);
+	v3f acc                 = readV3F32(is);
+	float expirationtime    = readF32(is);
+	float size              = readF32(is);
 	bool collisiondetection = readU8(is);
 	std::string texture     = deSerializeLongString(is);
 
@@ -967,10 +1011,7 @@ void Client::handleCommand_AddParticleSpawner(NetworkPacket* pkt)
 		object_collision = readU8(is);
 	} catch (...) {}
 
-	u32 client_id = m_particle_manager.getSpawnerId();
-	m_particles_server_to_client[server_id] = client_id;
-
-	ClientEvent *event = new ClientEvent();
+	auto event = new ClientEvent();
 	event->type                                   = CE_ADD_PARTICLESPAWNER;
 	event->add_particlespawner.amount             = amount;
 	event->add_particlespawner.spawntime          = spawntime;
@@ -990,7 +1031,7 @@ void Client::handleCommand_AddParticleSpawner(NetworkPacket* pkt)
 	event->add_particlespawner.attached_id        = attached_id;
 	event->add_particlespawner.vertical           = vertical;
 	event->add_particlespawner.texture            = new std::string(texture);
-	event->add_particlespawner.id                 = client_id;
+	event->add_particlespawner.id                 = server_id;
 	event->add_particlespawner.animation          = animation;
 	event->add_particlespawner.glow               = glow;
 
@@ -1003,16 +1044,9 @@ void Client::handleCommand_DeleteParticleSpawner(NetworkPacket* pkt)
 	u32 server_id;
 	*pkt >> server_id;
 
-	u32 client_id;
-	auto i = m_particles_server_to_client.find(server_id);
-	if (i != m_particles_server_to_client.end())
-		client_id = i->second;
-	else
-		return;
-
 	ClientEvent *event = new ClientEvent();
 	event->type = CE_DELETE_PARTICLESPAWNER;
-	event->delete_particlespawner.id = client_id;
+	event->delete_particlespawner.id = server_id;
 
 	m_client_event_queue.push(event);
 }

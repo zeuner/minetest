@@ -27,7 +27,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "guiTable.h"
 #include "constants.h"
 #include "gamedef.h"
-#include "keycode.h"
+#include "client/keycode.h"
 #include "util/strfnd.h"
 #include <IGUICheckBox.h>
 #include <IGUIEditBox.h>
@@ -47,13 +47,13 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "mainmenumanager.h"
 #include "porting.h"
 #include "settings.h"
-#include "client.h"
-#include "fontengine.h"
+#include "client/client.h"
+#include "client/fontengine.h"
 #include "util/hex.h"
 #include "util/numeric.h"
 #include "util/string.h" // for parseColorString()
 #include "irrlicht_changes/static_text.h"
-#include "guiscalingfilter.h"
+#include "client/guiscalingfilter.h"
 #include "guiEditBoxWithScrollbar.h"
 #include "intlGUIEditBox.h"
 
@@ -66,8 +66,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #define MY_CHECKGEOM(a,b)													\
 	if (v_geom.size() != 2) {												\
-		errorstream<< "Invalid pos for element " << a << "specified: \""	\
-			<< parts[b] << "\"" << std::endl;								\
+		errorstream<< "Invalid geometry for element " << a <<				\
+			"specified: \"" << parts[b] << "\"" << std::endl;				\
 			return;															\
 	}
 /*
@@ -86,7 +86,7 @@ inline u32 clamp_u8(s32 value)
 GUIFormSpecMenu::GUIFormSpecMenu(JoystickController *joystick,
 		gui::IGUIElement *parent, s32 id, IMenuManager *menumgr,
 		Client *client, ISimpleTextureSource *tsrc, IFormSource *fsrc, TextDest *tdst,
-		std::string formspecPrepend,
+		const std::string &formspecPrepend,
 		bool remap_dbl_click):
 	GUIModalMenu(RenderingEngine::get_gui_env(), parent, id, menumgr),
 	m_invmgr(client),
@@ -97,9 +97,6 @@ GUIFormSpecMenu::GUIFormSpecMenu(JoystickController *joystick,
 	m_text_dst(tdst),
 	m_joystick(joystick),
 	m_remap_dbl_click(remap_dbl_click)
-#ifdef __ANDROID__
-	, m_JavaDialogFieldName("")
-#endif
 {
 	current_keys_pending.key_down = false;
 	current_keys_pending.key_up = false;
@@ -273,6 +270,25 @@ v2s32 GUIFormSpecMenu::getElementBasePos(bool absolute,
 	return v2s32(pos_f.X, pos_f.Y);
 }
 
+v2s32 GUIFormSpecMenu::getRealCoordinateBasePos(bool absolute,
+		const std::vector<std::string> &v_pos)
+{
+	v2f32 pos_f = v2f32(0.0f, 0.0f);
+
+	pos_f.X += stof(v_pos[0]) + pos_offset.X;
+	pos_f.Y += stof(v_pos[1]) + pos_offset.Y;
+
+	if (absolute)
+		return v2s32(pos_f.X * imgsize.X + AbsoluteRect.UpperLeftCorner.X,
+				pos_f.Y * imgsize.Y + AbsoluteRect.UpperLeftCorner.Y);
+	return v2s32(pos_f.X * imgsize.X, pos_f.Y * imgsize.Y);
+}
+
+v2s32 GUIFormSpecMenu::getRealCoordinateGeometry(const std::vector<std::string> &v_geom)
+{
+	return v2s32(stof(v_geom[0]) * imgsize.X, stof(v_geom[1]) * imgsize.Y);
+}
+
 void GUIFormSpecMenu::parseSize(parserData* data, const std::string &element)
 {
 	std::vector<std::string> parts = split(element,',');
@@ -287,12 +303,13 @@ void GUIFormSpecMenu::parseSize(parserData* data, const std::string &element)
 		data->invsize.Y = MYMAX(0, stof(parts[1]));
 
 		lockSize(false);
+#ifndef __ANDROID__
 		if (parts.size() == 3) {
 			if (parts[2] == "true") {
 				lockSize(true,v2u32(800,600));
 			}
 		}
-
+#endif
 		data->explicit_size = true;
 		return;
 	}
@@ -350,13 +367,19 @@ void GUIFormSpecMenu::parseList(parserData* data, const std::string &element)
 
 		InventoryLocation loc;
 
-		if(location == "context" || location == "current_name")
+		if (location == "context" || location == "current_name")
 			loc = m_current_inventory_location;
 		else
 			loc.deSerialize(location);
 
-		v2s32 pos = getElementBasePos(true, &v_pos);
+		v2s32 pos;
 		v2s32 geom;
+
+		if (data->real_coordinates)
+			pos = getRealCoordinateBasePos(true, v_pos);
+		else
+			pos = getElementBasePos(true, &v_pos);
+
 		geom.X = stoi(v_geom[0]);
 		geom.Y = stoi(v_geom[1]);
 
@@ -371,7 +394,7 @@ void GUIFormSpecMenu::parseList(parserData* data, const std::string &element)
 
 		if(!data->explicit_size)
 			warningstream<<"invalid use of list without a size[] element"<<std::endl;
-		m_inventorylists.emplace_back(loc, listname, pos, geom, start_i);
+		m_inventorylists.emplace_back(loc, listname, pos, geom, start_i, data->real_coordinates);
 		return;
 	}
 	errorstream<< "Invalid list element(" << parts.size() << "): '" << element << "'"  << std::endl;
@@ -432,19 +455,37 @@ void GUIFormSpecMenu::parseCheckbox(parserData* data, const std::string &element
 
 		MY_CHECKPOS("checkbox",0);
 
-		v2s32 pos = getElementBasePos(false, &v_pos);
-
 		bool fselected = false;
 
 		if (selected == "true")
 			fselected = true;
 
 		std::wstring wlabel = translate_string(utf8_to_wide(unescape_string(label)));
+		const core::dimension2d<u32> label_size = m_font->getDimension(wlabel.c_str());
+		s32 cb_size = Environment->getSkin()->getSize(gui::EGDS_CHECK_BOX_WIDTH);
+		s32 y_center = (std::max(label_size.Height, (u32)cb_size) + 1) / 2;
 
-		core::rect<s32> rect = core::rect<s32>(
-				pos.X, pos.Y + ((imgsize.Y/2) - m_btn_height),
-				pos.X + m_font->getDimension(wlabel.c_str()).Width + 25, // text size + size of checkbox
-				pos.Y + ((imgsize.Y/2) + m_btn_height));
+		v2s32 pos;
+		core::rect<s32> rect;
+
+		if (data->real_coordinates) {
+			pos = getRealCoordinateBasePos(false, v_pos);
+
+			rect = core::rect<s32>(
+					pos.X,
+					pos.Y - y_center,
+					pos.X + label_size.Width + cb_size + 7,
+					pos.Y + y_center
+				);
+		} else {
+			pos = getElementBasePos(false, &v_pos);
+			rect = core::rect<s32>(
+					pos.X,
+					pos.Y + imgsize.Y / 2 - y_center,
+					pos.X + label_size.Width + cb_size + 7,
+					pos.Y + imgsize.Y / 2 + y_center
+				);
+		}
 
 		FieldSpec spec(
 				name,
@@ -475,23 +516,24 @@ void GUIFormSpecMenu::parseScrollBar(parserData* data, const std::string &elemen
 
 	if (parts.size() >= 5) {
 		std::vector<std::string> v_pos = split(parts[0],',');
-		std::vector<std::string> v_dim = split(parts[1],',');
+		std::vector<std::string> v_geom = split(parts[1],',');
 		std::string name = parts[3];
 		std::string value = parts[4];
 
 		MY_CHECKPOS("scrollbar",0);
+		MY_CHECKGEOM("scrollbar",1);
 
-		v2s32 pos = getElementBasePos(false, &v_pos);
-
-		if (v_dim.size() != 2) {
-			errorstream<< "Invalid size for element " << "scrollbar"
-				<< "specified: \"" << parts[1] << "\"" << std::endl;
-			return;
-		}
-
+		v2s32 pos;
 		v2s32 dim;
-		dim.X = stof(v_dim[0]) * spacing.X;
-		dim.Y = stof(v_dim[1]) * spacing.Y;
+
+		if (data->real_coordinates) {
+			pos = getRealCoordinateBasePos(false, v_pos);
+			dim = getRealCoordinateGeometry(v_geom);
+		} else {
+			pos = getElementBasePos(false, &v_pos);
+			dim.X = stof(v_geom[0]) * spacing.X;
+			dim.Y = stof(v_geom[1]) * spacing.Y;
+		}
 
 		core::rect<s32> rect =
 				core::rect<s32>(pos.X, pos.Y, pos.X + dim.X, pos.Y + dim.Y);
@@ -540,10 +582,17 @@ void GUIFormSpecMenu::parseImage(parserData* data, const std::string &element)
 		MY_CHECKPOS("image", 0);
 		MY_CHECKGEOM("image", 1);
 
-		v2s32 pos = getElementBasePos(true, &v_pos);
+		v2s32 pos;
 		v2s32 geom;
-		geom.X = stof(v_geom[0]) * (float)imgsize.X;
-		geom.Y = stof(v_geom[1]) * (float)imgsize.Y;
+
+		if (data->real_coordinates) {
+			pos = getRealCoordinateBasePos(true, v_pos);
+			geom = getRealCoordinateGeometry(v_geom);
+		} else {
+			pos = getElementBasePos(true, &v_pos);
+			geom.X = stof(v_geom[0]) * (float)imgsize.X;
+			geom.Y = stof(v_geom[1]) * (float)imgsize.Y;
+		}
 
 		if (!data->explicit_size)
 			warningstream<<"invalid use of image without a size[] element"<<std::endl;
@@ -581,10 +630,17 @@ void GUIFormSpecMenu::parseItemImage(parserData* data, const std::string &elemen
 		MY_CHECKPOS("itemimage",0);
 		MY_CHECKGEOM("itemimage",1);
 
-		v2s32 pos = getElementBasePos(true, &v_pos);
+		v2s32 pos;
 		v2s32 geom;
-		geom.X = stof(v_geom[0]) * (float)imgsize.X;
-		geom.Y = stof(v_geom[1]) * (float)imgsize.Y;
+
+		if (data->real_coordinates) {
+			pos = getRealCoordinateBasePos(true, v_pos);
+			geom = getRealCoordinateGeometry(v_geom);
+		} else {
+			pos = getElementBasePos(true, &v_pos);
+			geom.X = stof(v_geom[0]) * (float)imgsize.X;
+			geom.Y = stof(v_geom[1]) * (float)imgsize.Y;
+		}
 
 		if(!data->explicit_size)
 			warningstream<<"invalid use of item_image without a size[] element"<<std::endl;
@@ -610,14 +666,23 @@ void GUIFormSpecMenu::parseButton(parserData* data, const std::string &element,
 		MY_CHECKPOS("button",0);
 		MY_CHECKGEOM("button",1);
 
-		v2s32 pos = getElementBasePos(false, &v_pos);
+		v2s32 pos;
 		v2s32 geom;
-		geom.X = (stof(v_geom[0]) * spacing.X) - (spacing.X - imgsize.X);
-		pos.Y += (stof(v_geom[1]) * (float)imgsize.Y)/2;
+		core::rect<s32> rect;
 
-		core::rect<s32> rect =
-				core::rect<s32>(pos.X, pos.Y - m_btn_height,
+		if (data->real_coordinates) {
+			pos = getRealCoordinateBasePos(false, v_pos);
+			geom = getRealCoordinateGeometry(v_geom);
+			rect = core::rect<s32>(pos.X, pos.Y, pos.X+geom.X,
+				pos.Y+geom.Y);
+		} else {
+			pos = getElementBasePos(false, &v_pos);
+			geom.X = (stof(v_geom[0]) * spacing.X) - (spacing.X - imgsize.X);
+			pos.Y += (stof(v_geom[1]) * (float)imgsize.Y)/2;
+
+			rect = core::rect<s32>(pos.X, pos.Y - m_btn_height,
 						pos.X + geom.X, pos.Y + m_btn_height);
+		}
 
 		if(!data->explicit_size)
 			warningstream<<"invalid use of button without a size[] element"<<std::endl;
@@ -650,9 +715,8 @@ void GUIFormSpecMenu::parseBackground(parserData* data, const std::string &eleme
 {
 	std::vector<std::string> parts = split(element,';');
 
-	if (((parts.size() == 3) || (parts.size() == 4)) ||
-		((parts.size() > 4) && (m_formspec_version > FORMSPEC_API_VERSION)))
-	{
+	if ((parts.size() >= 3 && parts.size() <= 5) ||
+			(parts.size() > 5 && m_formspec_version > FORMSPEC_API_VERSION)) {
 		std::vector<std::string> v_pos = split(parts[0],',');
 		std::vector<std::string> v_geom = split(parts[1],',');
 		std::string name = unescape_string(parts[2]);
@@ -660,25 +724,58 @@ void GUIFormSpecMenu::parseBackground(parserData* data, const std::string &eleme
 		MY_CHECKPOS("background",0);
 		MY_CHECKGEOM("background",1);
 
-		v2s32 pos = getElementBasePos(true, &v_pos);
-		pos.X -= (spacing.X - (float)imgsize.X) / 2;
-		pos.Y -= (spacing.Y - (float)imgsize.Y) / 2;
-
+		v2s32 pos;
 		v2s32 geom;
-		geom.X = stof(v_geom[0]) * spacing.X;
-		geom.Y = stof(v_geom[1]) * spacing.Y;
+
+		if (data->real_coordinates) {
+			pos = getRealCoordinateBasePos(true, v_pos);
+			geom = getRealCoordinateGeometry(v_geom);
+		} else {
+			pos = getElementBasePos(true, &v_pos);
+			pos.X -= (spacing.X - (float)imgsize.X) / 2;
+			pos.Y -= (spacing.Y - (float)imgsize.Y) / 2;
+
+			geom.X = stof(v_geom[0]) * spacing.X;
+			geom.Y = stof(v_geom[1]) * spacing.Y;
+		}
 
 		bool clip = false;
-		if (parts.size() == 4 && is_yes(parts[3])) {
-			pos.X = stoi(v_pos[0]); //acts as offset
-			pos.Y = stoi(v_pos[1]); //acts as offset
+		if (parts.size() >= 4 && is_yes(parts[3])) {
+			if (data->real_coordinates) {
+				pos = getRealCoordinateBasePos(false, v_pos) * -1;
+				geom = v2s32(0, 0);
+			} else {
+				pos.X = stoi(v_pos[0]); //acts as offset
+				pos.Y = stoi(v_pos[1]);
+			}
 			clip = true;
 		}
-		
+
+		core::rect<s32> middle;
+		if (parts.size() >= 5) {
+			std::vector<std::string> v_middle = split(parts[4], ',');
+			if (v_middle.size() == 1) {
+				s32 x = stoi(v_middle[0]);
+				middle.UpperLeftCorner = core::vector2di(x, x);
+				middle.LowerRightCorner = core::vector2di(-x, -x);
+			} else if (v_middle.size() == 2) {
+				s32 x = stoi(v_middle[0]);
+				s32 y =	stoi(v_middle[1]);
+				middle.UpperLeftCorner = core::vector2di(x, y);
+				middle.LowerRightCorner = core::vector2di(-x, -y);
+				// `-x` is interpreted as `w - x`
+			} else if (v_middle.size() == 4) {
+				middle.UpperLeftCorner = core::vector2di(stoi(v_middle[0]), stoi(v_middle[1]));
+				middle.LowerRightCorner = core::vector2di(stoi(v_middle[2]), stoi(v_middle[3]));
+			} else {
+				warningstream << "Invalid rectangle given to middle param of background[] element" << std::endl;
+			}
+		}
+
 		if (!data->explicit_size && !clip)
 			warningstream << "invalid use of unclipped background without a size[] element" << std::endl;
-		
-		m_backgrounds.emplace_back(name, pos, geom, clip);
+
+		m_backgrounds.emplace_back(name, pos, geom, middle, clip);
 
 		return;
 	}
@@ -737,10 +834,17 @@ void GUIFormSpecMenu::parseTable(parserData* data, const std::string &element)
 		MY_CHECKPOS("table",0);
 		MY_CHECKGEOM("table",1);
 
-		v2s32 pos = getElementBasePos(false, &v_pos);
+		v2s32 pos;
 		v2s32 geom;
-		geom.X = stof(v_geom[0]) * spacing.X;
-		geom.Y = stof(v_geom[1]) * spacing.Y;
+
+		if (data->real_coordinates) {
+			pos = getRealCoordinateBasePos(false, v_pos);
+			geom = getRealCoordinateGeometry(v_geom);
+		} else {
+			pos = getElementBasePos(false, &v_pos);
+			geom.X = stof(v_geom[0]) * spacing.X;
+			geom.Y = stof(v_geom[1]) * spacing.Y;
+		}
 
 		core::rect<s32> rect = core::rect<s32>(pos.X, pos.Y, pos.X+geom.X, pos.Y+geom.Y);
 
@@ -804,11 +908,17 @@ void GUIFormSpecMenu::parseTextList(parserData* data, const std::string &element
 		MY_CHECKPOS("textlist",0);
 		MY_CHECKGEOM("textlist",1);
 
-		v2s32 pos = getElementBasePos(false, &v_pos);
+		v2s32 pos;
 		v2s32 geom;
-		geom.X = stof(v_geom[0]) * spacing.X;
-		geom.Y = stof(v_geom[1]) * spacing.Y;
 
+		if (data->real_coordinates) {
+			pos = getRealCoordinateBasePos(false, v_pos);
+			geom = getRealCoordinateGeometry(v_geom);
+		} else {
+			pos = getElementBasePos(false, &v_pos);
+			geom.X = stof(v_geom[0]) * spacing.X;
+			geom.Y = stof(v_geom[1]) * spacing.Y;
+		}
 
 		core::rect<s32> rect = core::rect<s32>(pos.X, pos.Y, pos.X+geom.X, pos.Y+geom.Y);
 
@@ -865,12 +975,29 @@ void GUIFormSpecMenu::parseDropDown(parserData* data, const std::string &element
 
 		MY_CHECKPOS("dropdown",0);
 
-		v2s32 pos = getElementBasePos(false, &v_pos);
+		v2s32 pos;
+		v2s32 geom;
+		core::rect<s32> rect;
 
-		s32 width = stof(parts[1]) * spacing.Y;
+		if (data->real_coordinates) {
+			std::vector<std::string> v_geom = split(parts[1],',');
 
-		core::rect<s32> rect = core::rect<s32>(pos.X, pos.Y,
-				pos.X + width, pos.Y + (m_btn_height * 2));
+			if (v_geom.size() == 1)
+				v_geom.emplace_back("1");
+
+			MY_CHECKGEOM("dropdown",1);
+
+			pos = getRealCoordinateBasePos(false, v_pos);
+			geom = getRealCoordinateGeometry(v_geom);
+			rect = core::rect<s32>(pos.X, pos.Y, pos.X+geom.X, pos.Y+geom.Y);
+		} else {
+			pos = getElementBasePos(false, &v_pos);
+
+			s32 width = stof(parts[1]) * spacing.Y;
+
+			rect = core::rect<s32>(pos.X, pos.Y,
+					pos.X + width, pos.Y + (m_btn_height * 2));
+		}
 
 		FieldSpec spec(
 			name,
@@ -935,15 +1062,22 @@ void GUIFormSpecMenu::parsePwdField(parserData* data, const std::string &element
 		MY_CHECKPOS("pwdfield",0);
 		MY_CHECKGEOM("pwdfield",1);
 
-		v2s32 pos = getElementBasePos(false, &v_pos);
-		pos -= padding;
-
+		v2s32 pos;
 		v2s32 geom;
-		geom.X = (stof(v_geom[0]) * spacing.X) - (spacing.X - imgsize.X);
 
-		pos.Y += (stof(v_geom[1]) * (float)imgsize.Y)/2;
-		pos.Y -= m_btn_height;
-		geom.Y = m_btn_height*2;
+		if (data->real_coordinates) {
+			pos = getRealCoordinateBasePos(false, v_pos);
+			geom = getRealCoordinateGeometry(v_geom);
+		} else {
+			pos = getElementBasePos(false, &v_pos);
+			pos -= padding;
+
+			geom.X = (stof(v_geom[0]) * spacing.X) - (spacing.X - imgsize.X);
+
+			pos.Y += (stof(v_geom[1]) * (float)imgsize.Y)/2;
+			pos.Y -= m_btn_height;
+			geom.Y = m_btn_height*2;
+		}
 
 		core::rect<s32> rect = core::rect<s32>(pos.X, pos.Y, pos.X+geom.X, pos.Y+geom.Y);
 
@@ -1118,23 +1252,29 @@ void GUIFormSpecMenu::parseTextArea(parserData* data, std::vector<std::string>& 
 	MY_CHECKPOS(type,0);
 	MY_CHECKGEOM(type,1);
 
-	v2s32 pos = getElementBasePos(false, &v_pos);
-	pos -= padding;
-
+	v2s32 pos;
 	v2s32 geom;
 
-	geom.X = (stof(v_geom[0]) * spacing.X) - (spacing.X - imgsize.X);
+	if (data->real_coordinates) {
+		pos = getRealCoordinateBasePos(false, v_pos);
+		geom = getRealCoordinateGeometry(v_geom);
+	} else {
+		pos = getElementBasePos(false, &v_pos);
+		pos -= padding;
 
-	if (type == "textarea")
-	{
-		geom.Y = (stof(v_geom[1]) * (float)imgsize.Y) - (spacing.Y-imgsize.Y);
-		pos.Y += m_btn_height;
-	}
-	else
-	{
-		pos.Y += (stof(v_geom[1]) * (float)imgsize.Y)/2;
-		pos.Y -= m_btn_height;
-		geom.Y = m_btn_height*2;
+		geom.X = (stof(v_geom[0]) * spacing.X) - (spacing.X - imgsize.X);
+
+		if (type == "textarea")
+		{
+			geom.Y = (stof(v_geom[1]) * (float)imgsize.Y) - (spacing.Y-imgsize.Y);
+			pos.Y += m_btn_height;
+		}
+		else
+		{
+			pos.Y += (stof(v_geom[1]) * (float)imgsize.Y)/2;
+			pos.Y -= m_btn_height;
+			geom.Y = m_btn_height*2;
+		}
 	}
 
 	core::rect<s32> rect = core::rect<s32>(pos.X, pos.Y, pos.X+geom.X, pos.Y+geom.Y);
@@ -1198,31 +1338,55 @@ void GUIFormSpecMenu::parseLabel(parserData* data, const std::string &element)
 
 		MY_CHECKPOS("label",0);
 
-		v2s32 pos = getElementBasePos(false, nullptr);
-		pos.X += stof(v_pos[0]) * spacing.X;
-		pos.Y += (stof(v_pos[1]) + 7.0f / 30.0f) * spacing.Y;
-
 		if(!data->explicit_size)
 			warningstream<<"invalid use of label without a size[] element"<<std::endl;
 
 		std::vector<std::string> lines = split(text, '\n');
 
 		for (unsigned int i = 0; i != lines.size(); i++) {
-			// Lines are spaced at the nominal distance of
-			// 2/5 inventory slot, even if the font doesn't
-			// quite match that.  This provides consistent
-			// form layout, at the expense of sometimes
-			// having sub-optimal spacing for the font.
-			// We multiply by 2 and then divide by 5, rather
-			// than multiply by 0.4, to get exact results
-			// in the integer cases: 0.4 is not exactly
-			// representable in binary floating point.
-			s32 posy = pos.Y + ((float)i) * spacing.Y * 2.0 / 5.0;
 			std::wstring wlabel = utf8_to_wide(unescape_string(lines[i]));
-			core::rect<s32> rect = core::rect<s32>(
-				pos.X, posy - m_btn_height,
-				pos.X + m_font->getDimension(wlabel.c_str()).Width,
-				posy + m_btn_height);
+
+			core::rect<s32> rect;
+
+			if (data->real_coordinates) {
+				// Lines are spaced at the distance of 1/2 imgsize.
+				// This alows lines that line up with the new elements
+				// easily without sacrificing good line distance.  If
+				// it was one whole imgsize, it would have too much
+				// spacing.
+				v2s32 pos = getRealCoordinateBasePos(false, v_pos);
+
+				// Labels are positioned by their center, not their top.
+				pos.Y += (((float) imgsize.Y) / -2) + (((float) imgsize.Y) * i / 2);
+
+				rect = core::rect<s32>(
+					pos.X, pos.Y,
+					pos.X + m_font->getDimension(wlabel.c_str()).Width,
+					pos.Y + imgsize.Y);
+
+			} else {
+				// Lines are spaced at the nominal distance of
+				// 2/5 inventory slot, even if the font doesn't
+				// quite match that.  This provides consistent
+				// form layout, at the expense of sometimes
+				// having sub-optimal spacing for the font.
+				// We multiply by 2 and then divide by 5, rather
+				// than multiply by 0.4, to get exact results
+				// in the integer cases: 0.4 is not exactly
+				// representable in binary floating point.
+
+				v2s32 pos = getElementBasePos(false, nullptr);
+				pos.X += stof(v_pos[0]) * spacing.X;
+				pos.Y += (stof(v_pos[1]) + 7.0f / 30.0f) * spacing.Y;
+
+				pos.Y += ((float) i) * spacing.Y * 2.0 / 5.0;
+
+				rect = core::rect<s32>(
+					pos.X, pos.Y - m_btn_height,
+					pos.X + m_font->getDimension(wlabel.c_str()).Width,
+					pos.Y + m_btn_height);
+			}
+
 			FieldSpec spec(
 				"",
 				wlabel,
@@ -1237,7 +1401,8 @@ void GUIFormSpecMenu::parseLabel(parserData* data, const std::string &element)
 
 		return;
 	}
-	errorstream<< "Invalid label element(" << parts.size() << "): '" << element << "'"  << std::endl;
+	errorstream << "Invalid label element(" << parts.size() << "): '" << element
+		<< "'"  << std::endl;
 }
 
 void GUIFormSpecMenu::parseVertLabel(parserData* data, const std::string &element)
@@ -1253,15 +1418,35 @@ void GUIFormSpecMenu::parseVertLabel(parserData* data, const std::string &elemen
 
 		MY_CHECKPOS("vertlabel",1);
 
-		v2s32 pos = getElementBasePos(false, &v_pos);
+		v2s32 pos;
+		core::rect<s32> rect;
 
-		core::rect<s32> rect = core::rect<s32>(
-				pos.X, pos.Y+((imgsize.Y/2)- m_btn_height),
+		if (data->real_coordinates) {
+			pos = getRealCoordinateBasePos(false, v_pos);
+
+			// Vertlabels are positioned by center, not left.
+			pos.X -= imgsize.X / 2;
+
+			// We use text.length + 1 because without it, the rect
+			// isn't quite tall enough and cuts off the text.
+			rect = core::rect<s32>(pos.X, pos.Y,
+				pos.X + imgsize.X,
+				pos.Y + font_line_height(m_font) *
+				(text.length() + 1));
+
+		} else {
+			pos = getElementBasePos(false, &v_pos);
+
+			// As above, the length must be one longer. The width of
+			// the rect (15 pixels) seems rather arbitrary, but
+			// changing it might break something.
+			rect = core::rect<s32>(
+				pos.X, pos.Y+((imgsize.Y/2) - m_btn_height),
 				pos.X+15, pos.Y +
-					font_line_height(m_font)
-					* (text.length()+1)
-					+((imgsize.Y/2)- m_btn_height));
-		//actually text.length() would be correct but adding +1 avoids to break all mods
+					font_line_height(m_font) *
+					(text.length() + 1) +
+					((imgsize.Y/2) - m_btn_height));
+		}
 
 		if(!data->explicit_size)
 			warningstream<<"invalid use of label without a size[] element"<<std::endl;
@@ -1305,11 +1490,6 @@ void GUIFormSpecMenu::parseImageButton(parserData* data, const std::string &elem
 		MY_CHECKPOS("imagebutton",0);
 		MY_CHECKGEOM("imagebutton",1);
 
-		v2s32 pos = getElementBasePos(false, &v_pos);
-		v2s32 geom;
-		geom.X = (stof(v_geom[0]) * spacing.X) - (spacing.X - imgsize.X);
-		geom.Y = (stof(v_geom[1]) * spacing.Y) - (spacing.Y - imgsize.Y);
-
 		bool noclip     = false;
 		bool drawborder = true;
 		std::string pressed_image_name;
@@ -1325,9 +1505,22 @@ void GUIFormSpecMenu::parseImageButton(parserData* data, const std::string &elem
 			pressed_image_name = parts[7];
 		}
 
-		core::rect<s32> rect = core::rect<s32>(pos.X, pos.Y, pos.X+geom.X, pos.Y+geom.Y);
+		v2s32 pos;
+		v2s32 geom;
 
-		if(!data->explicit_size)
+		if (data->real_coordinates) {
+			pos = getRealCoordinateBasePos(false, v_pos);
+			geom = getRealCoordinateGeometry(v_geom);
+		} else {
+			pos = getElementBasePos(false, &v_pos);
+			geom.X = (stof(v_geom[0]) * spacing.X) - (spacing.X - imgsize.X);
+			geom.Y = (stof(v_geom[1]) * spacing.Y) - (spacing.Y - imgsize.Y);
+		}
+
+		core::rect<s32> rect = core::rect<s32>(pos.X, pos.Y, pos.X+geom.X,
+			pos.Y+geom.Y);
+
+		if (!data->explicit_size)
 			warningstream<<"invalid use of image_button without a size[] element"<<std::endl;
 
 		image_name = unescape_string(image_name);
@@ -1342,7 +1535,7 @@ void GUIFormSpecMenu::parseImageButton(parserData* data, const std::string &elem
 			258+m_fields.size()
 		);
 		spec.ftype = f_Button;
-		if(type == "image_button_exit")
+		if (type == "image_button_exit")
 			spec.is_exit = true;
 
 		video::ITexture *texture = 0;
@@ -1377,25 +1570,43 @@ void GUIFormSpecMenu::parseImageButton(parserData* data, const std::string &elem
 
 void GUIFormSpecMenu::parseTabHeader(parserData* data, const std::string &element)
 {
-	std::vector<std::string> parts = split(element,';');
+	std::vector<std::string> parts = split(element, ';');
 
-	if (((parts.size() == 4) || (parts.size() == 6)) ||
-		((parts.size() > 6) && (m_formspec_version > FORMSPEC_API_VERSION)))
+	if (((parts.size() == 4) || (parts.size() == 6)) || (parts.size() == 7 &&
+		data->real_coordinates) || ((parts.size() > 6) &&
+		(m_formspec_version > FORMSPEC_API_VERSION)))
 	{
 		std::vector<std::string> v_pos = split(parts[0],',');
-		std::string name = parts[1];
-		std::vector<std::string> buttons = split(parts[2],',');
-		std::string str_index = parts[3];
+
+		// If we're using real coordinates, add an extra field for height.
+		// Width is not here because tabs are the width of the text, and
+		// there's no reason to change that.
+		unsigned int i = 0;
+		std::vector<std::string> v_geom = {"1", "0.75"}; // Dummy width and default height
+		bool auto_width = true;
+		if (parts.size() == 7) {
+			i++;
+
+			v_geom = split(parts[1], ',');
+			if (v_geom.size() == 1)
+				v_geom.insert(v_geom.begin(), "1"); // Dummy value
+			else
+				auto_width = false;
+		}
+
+		std::string name = parts[i+1];
+		std::vector<std::string> buttons = split(parts[i+2], ',');
+		std::string str_index = parts[i+3];
 		bool show_background = true;
 		bool show_border = true;
-		int tab_index = stoi(str_index) -1;
+		int tab_index = stoi(str_index) - 1;
 
-		MY_CHECKPOS("tabheader",0);
+		MY_CHECKPOS("tabheader", 0);
 
-		if (parts.size() == 6) {
-			if (parts[4] == "true")
+		if (parts.size() == 6 + i) {
+			if (parts[4+i] == "true")
 				show_background = false;
-			if (parts[5] == "false")
+			if (parts[5+i] == "false")
 				show_border = false;
 		}
 
@@ -1409,15 +1620,26 @@ void GUIFormSpecMenu::parseTabHeader(parserData* data, const std::string &elemen
 		spec.ftype = f_TabHeader;
 
 		v2s32 pos;
-		{
+		v2s32 geom;
+
+		if (data->real_coordinates) {
+			pos = getRealCoordinateBasePos(false, v_pos);
+
+			geom = getRealCoordinateGeometry(v_geom);
+			pos.Y -= geom.Y; // TabHeader base pos is the bottom, not the top.
+			if (auto_width)
+				geom.X = DesiredRect.getWidth(); // Set automatic width
+
+			MY_CHECKGEOM("tabheader", 1);
+		} else {
 			v2f32 pos_f = pos_offset * spacing;
 			pos_f.X += stof(v_pos[0]) * spacing.X;
 			pos_f.Y += stof(v_pos[1]) * spacing.Y - m_btn_height * 2;
 			pos = v2s32(pos_f.X, pos_f.Y);
+
+			geom.Y = m_btn_height * 2;
+			geom.X = DesiredRect.getWidth();
 		}
-		v2s32 geom;
-		geom.X = DesiredRect.getWidth();
-		geom.Y = m_btn_height*2;
 
 		core::rect<s32> rect = core::rect<s32>(pos.X, pos.Y, pos.X+geom.X,
 				pos.Y+geom.Y);
@@ -1426,7 +1648,7 @@ void GUIFormSpecMenu::parseTabHeader(parserData* data, const std::string &elemen
 				show_background, show_border, spec.fid);
 		e->setAlignment(irr::gui::EGUIA_UPPERLEFT, irr::gui::EGUIA_UPPERLEFT,
 				irr::gui::EGUIA_UPPERLEFT, irr::gui::EGUIA_LOWERRIGHT);
-		e->setTabHeight(m_btn_height*2);
+		e->setTabHeight(geom.Y);
 
 		if (spec.fname == data->focused_fieldname) {
 			Environment->setFocus(e);
@@ -1477,10 +1699,17 @@ void GUIFormSpecMenu::parseItemImageButton(parserData* data, const std::string &
 		MY_CHECKPOS("itemimagebutton",0);
 		MY_CHECKGEOM("itemimagebutton",1);
 
-		v2s32 pos = getElementBasePos(false, &v_pos);
+		v2s32 pos;
 		v2s32 geom;
-		geom.X = (stof(v_geom[0]) * spacing.X) - (spacing.X - imgsize.X);
-		geom.Y = (stof(v_geom[1]) * spacing.Y) - (spacing.Y - imgsize.Y);
+
+		if (data->real_coordinates) {
+			pos = getRealCoordinateBasePos(false, v_pos);
+			geom = getRealCoordinateGeometry(v_geom);
+		} else {
+			pos = getElementBasePos(false, &v_pos);
+			geom.X = (stof(v_geom[0]) * spacing.X) - (spacing.X - imgsize.X);
+			geom.Y = (stof(v_geom[1]) * spacing.Y) - (spacing.Y - imgsize.Y);
+		}
 
 		core::rect<s32> rect = core::rect<s32>(pos.X, pos.Y, pos.X+geom.X, pos.Y+geom.Y);
 
@@ -1514,7 +1743,11 @@ void GUIFormSpecMenu::parseItemImageButton(parserData* data, const std::string &
 		spec.rect=rect;
 		m_fields.push_back(spec);
 
-		pos = getElementBasePos(true, &v_pos);
+		if (data->real_coordinates)
+			pos = getRealCoordinateBasePos(true, v_pos);
+		else
+			pos = getElementBasePos(true, &v_pos);
+
 		m_itemimages.emplace_back("", item_name, e, pos, geom);
 		m_static_texts.emplace_back(utf8_to_wide(label), rect, e);
 		return;
@@ -1535,10 +1768,17 @@ void GUIFormSpecMenu::parseBox(parserData* data, const std::string &element)
 		MY_CHECKPOS("box",0);
 		MY_CHECKGEOM("box",1);
 
-		v2s32 pos = getElementBasePos(true, &v_pos);
+		v2s32 pos;
 		v2s32 geom;
-		geom.X = stof(v_geom[0]) * spacing.X;
-		geom.Y = stof(v_geom[1]) * spacing.Y;
+
+		if (data->real_coordinates) {
+			pos = getRealCoordinateBasePos(true, v_pos);
+			geom = getRealCoordinateGeometry(v_geom);
+		} else {
+			pos = getElementBasePos(true, &v_pos);
+			geom.X = stof(v_geom[0]) * spacing.X;
+			geom.Y = stof(v_geom[1]) * spacing.Y;
+		}
 
 		video::SColor tmp_color;
 
@@ -1641,13 +1881,20 @@ void GUIFormSpecMenu::parseTooltip(parserData* data, const std::string &element)
 		std::vector<std::string> v_pos  = split(parts[0], ',');
 		std::vector<std::string> v_geom = split(parts[1], ',');
 
-		MY_CHECKPOS("tooltip",  0);
+		MY_CHECKPOS("tooltip", 0);
 		MY_CHECKGEOM("tooltip", 1);
 
-		v2s32 pos = getElementBasePos(true, &v_pos);
+		v2s32 pos;
 		v2s32 geom;
-		geom.X = stof(v_geom[0]) * spacing.X;
-		geom.Y = stof(v_geom[1]) * spacing.Y;
+
+		if (data->real_coordinates) {
+			pos = getRealCoordinateBasePos(true, v_pos);
+			geom = getRealCoordinateGeometry(v_geom);
+		} else {
+			pos = getElementBasePos(true, &v_pos);
+			geom.X = stof(v_geom[0]) * spacing.X;
+			geom.Y = stof(v_geom[1]) * spacing.Y;
+		}
 
 		irr::core::rect<s32> rect(pos, pos + geom);
 		m_tooltip_rects.emplace_back(rect, spec);
@@ -1933,6 +2180,11 @@ void GUIFormSpecMenu::parseElement(parserData* data, const std::string &element)
 		return;
 	}
 
+	if (type == "real_coordinates") {
+		data->real_coordinates = is_yes(description);
+		return;
+	}
+
 	// Ignore others
 	infostream << "Unknown DrawSpec: type=" << type << ", data=\"" << description << "\""
 			<< std::endl;
@@ -2097,6 +2349,17 @@ void GUIFormSpecMenu::regenerateGui(v2u32 screensize)
 			break;
 	}
 
+	/* Copy of the "real_coordinates" element for after the form size. */
+	mydata.real_coordinates = false;
+	for (; i < elements.size(); i++) {
+		std::vector<std::string> parts = split(elements[i], '[');
+		std::string name = trim(parts[0]);
+		if (name != "real_coordinates" || parts.size() != 2)
+			break; // Invalid format
+
+		mydata.real_coordinates = is_yes(trim(parts[1]));
+	}
+
 	if (mydata.explicit_size) {
 		// compute scaling for specified form size
 		if (m_lock) {
@@ -2148,16 +2411,28 @@ void GUIFormSpecMenu::regenerateGui(v2u32 screensize)
 			// the image size can't be less than 0.3 inch
 			// multiplied by gui_scaling, even if this means
 			// the form doesn't fit the screen.
-			double prefer_imgsize = mydata.screensize.Y / 15 *
-				gui_scaling;
+#ifdef __ANDROID__
+			// For mobile devices these magic numbers are
+			// different and forms should always use the
+			// maximum screen space available.
+			double prefer_imgsize = mydata.screensize.Y / 10 * gui_scaling;
 			double fitx_imgsize = mydata.screensize.X /
-				((5.0/4.0) * (0.5 + mydata.invsize.X));
+				((12.0 / 8.0) * (0.5 + mydata.invsize.X));
 			double fity_imgsize = mydata.screensize.Y /
-				((15.0/13.0) * (0.85 * mydata.invsize.Y));
+				((15.0 / 11.0) * (0.85 + mydata.invsize.Y));
+			use_imgsize = MYMIN(prefer_imgsize,
+					MYMIN(fitx_imgsize, fity_imgsize));
+#else
+			double prefer_imgsize = mydata.screensize.Y / 15 * gui_scaling;
+			double fitx_imgsize = mydata.screensize.X /
+				((5.0 / 4.0) * (0.5 + mydata.invsize.X));
+			double fity_imgsize = mydata.screensize.Y /
+				((15.0 / 13.0) * (0.85 * mydata.invsize.Y));
 			double screen_dpi = RenderingEngine::getDisplayDensity() * 96;
 			double min_imgsize = 0.3 * screen_dpi * gui_scaling;
 			use_imgsize = MYMAX(min_imgsize, MYMIN(prefer_imgsize,
 				MYMIN(fitx_imgsize, fity_imgsize)));
+#endif
 		}
 
 		// Everything else is scaled in proportion to the
@@ -2175,10 +2450,18 @@ void GUIFormSpecMenu::regenerateGui(v2u32 screensize)
 
 		m_font = g_fontengine->getFont();
 
-		mydata.size = v2s32(
-			padding.X*2+spacing.X*(mydata.invsize.X-1.0)+imgsize.X,
-			padding.Y*2+spacing.Y*(mydata.invsize.Y-1.0)+imgsize.Y + m_btn_height*2.0/3.0
-		);
+		if (mydata.real_coordinates) {
+			mydata.size = v2s32(
+				mydata.invsize.X*imgsize.X,
+				mydata.invsize.Y*imgsize.Y
+			);
+		} else {
+			mydata.size = v2s32(
+				padding.X*2+spacing.X*(mydata.invsize.X-1.0)+imgsize.X,
+				padding.Y*2+spacing.Y*(mydata.invsize.Y-1.0)+imgsize.Y + m_btn_height*2.0/3.0
+			);
+		}
+
 		DesiredRect = mydata.rect = core::rect<s32>(
 				(s32)((f32)mydata.screensize.X * mydata.offset.X) - (s32)(mydata.anchor.X * (f32)mydata.size.X) + offset.X,
 				(s32)((f32)mydata.screensize.Y * mydata.offset.Y) - (s32)(mydata.anchor.Y * (f32)mydata.size.Y) + offset.Y,
@@ -2210,9 +2493,13 @@ void GUIFormSpecMenu::regenerateGui(v2u32 screensize)
 	pos_offset = v2f32();
 
 	if (enable_prepends) {
+		// Backup the coordinates so that prepends can use the coordinates of choice.
+		bool rc_backup = mydata.real_coordinates;
+		mydata.real_coordinates = false; // Old coordinates by default.
 		std::vector<std::string> prepend_elements = split(m_formspec_prepend, ']');
 		for (const auto &element : prepend_elements)
 			parseElement(&mydata, element);
+		mydata.real_coordinates = rc_backup; // Restore coordinates
 	}
 
 	for (; i< elements.size(); i++) {
@@ -2265,23 +2552,11 @@ void GUIFormSpecMenu::regenerateGui(v2u32 screensize)
 #ifdef __ANDROID__
 bool GUIFormSpecMenu::getAndroidUIInput()
 {
-	/* no dialog shown */
-	if (m_JavaDialogFieldName == "") {
+	if (!hasAndroidUIInput())
 		return false;
-	}
 
-	/* still waiting */
-	if (porting::getInputDialogState() == -1) {
-		return true;
-	}
-
-	std::string fieldname = m_JavaDialogFieldName;
-	m_JavaDialogFieldName = "";
-
-	/* no value abort dialog processing */
-	if (porting::getInputDialogState() != 0) {
-		return false;
-	}
+	std::string fieldname = m_jni_field_name;
+	m_jni_field_name.clear();
 
 	for(std::vector<FieldSpec>::iterator iter =  m_fields.begin();
 			iter != m_fields.end(); ++iter) {
@@ -2301,8 +2576,7 @@ bool GUIFormSpecMenu::getAndroidUIInput()
 
 		std::string text = porting::getInputDialogValue();
 
-		((gui::IGUIEditBox*) tochange)->
-			setText(utf8_to_wide(text).c_str());
+		((gui::IGUIEditBox *)tochange)->setText(utf8_to_wide(text).c_str());
 	}
 	return false;
 }
@@ -2315,8 +2589,16 @@ GUIFormSpecMenu::ItemSpec GUIFormSpecMenu::getItemAtPos(v2s32 p) const
 	for (const GUIFormSpecMenu::ListDrawSpec &s : m_inventorylists) {
 		for(s32 i=0; i<s.geom.X*s.geom.Y; i++) {
 			s32 item_i = i + s.start_item_i;
-			s32 x = (i%s.geom.X) * spacing.X;
-			s32 y = (i/s.geom.X) * spacing.Y;
+
+			s32 x;
+			s32 y;
+			if (s.real_coordinates) {
+				x = (i%s.geom.X) * (imgsize.X * 1.25);
+				y = (i/s.geom.X) * (imgsize.Y * 1.25);
+			} else {
+				x = (i%s.geom.X) * spacing.X;
+				y = (i/s.geom.X) * spacing.Y;
+			}
 			v2s32 p0(x,y);
 			core::rect<s32> rect = imgrect + s.pos + p0;
 			if(rect.isPointInside(p))
@@ -2358,8 +2640,15 @@ void GUIFormSpecMenu::drawList(const ListDrawSpec &s, int layer,
 		if (item_i >= (s32)ilist->getSize())
 			break;
 
-		s32 x = (i%s.geom.X) * spacing.X;
-		s32 y = (i/s.geom.X) * spacing.Y;
+		s32 x;
+		s32 y;
+		if (s.real_coordinates) {
+			x = (i%s.geom.X) * (imgsize.X * 1.25);
+			y = (i/s.geom.X) * (imgsize.Y * 1.25);
+		} else {
+			x = (i%s.geom.X) * spacing.X;
+			y = (i/s.geom.X) * spacing.Y;
+		}
 		v2s32 p(x,y);
 		core::rect<s32> rect = imgrect + s.pos + p;
 		ItemStack item = ilist->getItem(item_i);
@@ -2426,8 +2715,8 @@ void GUIFormSpecMenu::drawList(const ListDrawSpec &s, int layer,
 				if (!item.name.empty()) {
 					if (tooltip_text.empty())
 						tooltip_text = utf8_to_wide(item.name);
-					if (m_tooltip_append_itemname)
-						tooltip_text += utf8_to_wide(" [" + item.name + "]");
+					else if (m_tooltip_append_itemname)
+						tooltip_text += utf8_to_wide("\n[" + item.name + "]");
 				}
 			}
 			if (!tooltip_text.empty()) {
@@ -2512,6 +2801,8 @@ void GUIFormSpecMenu::drawMenu()
 			core::rect<s32> imgrect(0, 0, spec.geom.X, spec.geom.Y);
 			// Image rectangle on screen
 			core::rect<s32> rect = imgrect + spec.pos;
+			// Middle rect for 9-slicing
+			core::rect<s32> middle = spec.middle;
 
 			if (spec.clip) {
 				core::dimension2d<s32> absrec_size = AbsoluteRect.getSize();
@@ -2521,12 +2812,23 @@ void GUIFormSpecMenu::drawMenu()
 									AbsoluteRect.UpperLeftCorner.Y + absrec_size.Height + spec.pos.Y);
 			}
 
-			const video::SColor color(255,255,255,255);
-			const video::SColor colors[] = {color,color,color,color};
-			draw2DImageFilterScaled(driver, texture, rect,
-				core::rect<s32>(core::position2d<s32>(0,0),
-						core::dimension2di(texture->getOriginalSize())),
-				NULL/*&AbsoluteClippingRect*/, colors, true);
+			if (middle.getArea() == 0) {
+				const video::SColor color(255, 255, 255, 255);
+				const video::SColor colors[] = {color, color, color, color};
+				draw2DImageFilterScaled(driver, texture, rect,
+						core::rect<s32>(core::position2d<s32>(0, 0),
+								core::dimension2di(texture->getOriginalSize())),
+						NULL/*&AbsoluteClippingRect*/, colors, true);
+			} else {
+				// `-x` is interpreted as `w - x`
+				if (middle.LowerRightCorner.X < 0) {
+					middle.LowerRightCorner.X += texture->getOriginalSize().Width;
+				}
+				if (middle.LowerRightCorner.Y < 0) {
+					middle.LowerRightCorner.Y += texture->getOriginalSize().Height;
+				}
+				draw2DImage9Slice(driver, texture, rect, middle);
+			}
 		} else {
 			errorstream << "GUIFormSpecMenu::drawMenu() Draw backgrounds unable to load texture:" << std::endl;
 			errorstream << "\t" << spec.name << std::endl;
@@ -3043,158 +3345,6 @@ bool GUIFormSpecMenu::preprocessEvent(const SEvent& event)
 		}
 	}
 
-	#ifdef __ANDROID__
-	// display software keyboard when clicking edit boxes
-	if (event.EventType == EET_MOUSE_INPUT_EVENT
-			&& event.MouseInput.Event == EMIE_LMOUSE_PRESSED_DOWN) {
-		gui::IGUIElement *hovered =
-			Environment->getRootGUIElement()->getElementFromPoint(
-				core::position2d<s32>(event.MouseInput.X, event.MouseInput.Y));
-		if ((hovered) && (hovered->getType() == irr::gui::EGUIET_EDIT_BOX)) {
-			bool retval = hovered->OnEvent(event);
-			if (retval)
-				Environment->setFocus(hovered);
-
-			std::string field_name = getNameByID(hovered->getID());
-			/* read-only field */
-			if (field_name.empty())
-				return retval;
-
-			m_JavaDialogFieldName = field_name;
-			std::string message   = gettext("Enter ");
-			std::string label     = wide_to_utf8(getLabelByID(hovered->getID()));
-			if (label.empty())
-				label = "text";
-			message += gettext(label) + ":";
-
-			/* single line text input */
-			int type = 2;
-
-			/* multi line text input */
-			if (((gui::IGUIEditBox*) hovered)->isMultiLineEnabled())
-				type = 1;
-
-			/* passwords are always single line */
-			if (((gui::IGUIEditBox*) hovered)->isPasswordBox())
-				type = 3;
-
-			porting::showInputDialog(gettext("ok"), "",
-					wide_to_utf8(((gui::IGUIEditBox*) hovered)->getText()),
-					type);
-			return retval;
-		}
-	}
-
-	if (event.EventType == EET_TOUCH_INPUT_EVENT)
-	{
-		SEvent translated;
-		memset(&translated, 0, sizeof(SEvent));
-		translated.EventType   = EET_MOUSE_INPUT_EVENT;
-		gui::IGUIElement* root = Environment->getRootGUIElement();
-
-		if (!root) {
-			errorstream
-			<< "GUIFormSpecMenu::preprocessEvent unable to get root element"
-			<< std::endl;
-			return false;
-		}
-		gui::IGUIElement* hovered = root->getElementFromPoint(
-			core::position2d<s32>(
-					event.TouchInput.X,
-					event.TouchInput.Y));
-
-		translated.MouseInput.X = event.TouchInput.X;
-		translated.MouseInput.Y = event.TouchInput.Y;
-		translated.MouseInput.Control = false;
-
-		bool dont_send_event = false;
-
-		if (event.TouchInput.touchedCount == 1) {
-			switch (event.TouchInput.Event) {
-				case ETIE_PRESSED_DOWN:
-					m_pointer = v2s32(event.TouchInput.X,event.TouchInput.Y);
-					translated.MouseInput.Event = EMIE_LMOUSE_PRESSED_DOWN;
-					translated.MouseInput.ButtonStates = EMBSM_LEFT;
-					m_down_pos = m_pointer;
-					break;
-				case ETIE_MOVED:
-					m_pointer = v2s32(event.TouchInput.X,event.TouchInput.Y);
-					translated.MouseInput.Event = EMIE_MOUSE_MOVED;
-					translated.MouseInput.ButtonStates = EMBSM_LEFT;
-					break;
-				case ETIE_LEFT_UP:
-					translated.MouseInput.Event = EMIE_LMOUSE_LEFT_UP;
-					translated.MouseInput.ButtonStates = 0;
-					hovered = root->getElementFromPoint(m_down_pos);
-					/* we don't have a valid pointer element use last
-					 * known pointer pos */
-					translated.MouseInput.X = m_pointer.X;
-					translated.MouseInput.Y = m_pointer.Y;
-
-					/* reset down pos */
-					m_down_pos = v2s32(0,0);
-					break;
-				default:
-					dont_send_event = true;
-					//this is not supposed to happen
-					errorstream
-					<< "GUIFormSpecMenu::preprocessEvent unexpected usecase Event="
-					<< event.TouchInput.Event << std::endl;
-			}
-		} else if ( (event.TouchInput.touchedCount == 2) &&
-				(event.TouchInput.Event == ETIE_PRESSED_DOWN) ) {
-			hovered = root->getElementFromPoint(m_down_pos);
-
-			translated.MouseInput.Event = EMIE_RMOUSE_PRESSED_DOWN;
-			translated.MouseInput.ButtonStates = EMBSM_LEFT | EMBSM_RIGHT;
-			translated.MouseInput.X = m_pointer.X;
-			translated.MouseInput.Y = m_pointer.Y;
-
-			if (hovered) {
-				hovered->OnEvent(translated);
-			}
-
-			translated.MouseInput.Event = EMIE_RMOUSE_LEFT_UP;
-			translated.MouseInput.ButtonStates = EMBSM_LEFT;
-
-
-			if (hovered) {
-				hovered->OnEvent(translated);
-			}
-			dont_send_event = true;
-		}
-		/* ignore unhandled 2 touch events ... accidental moving for example */
-		else if (event.TouchInput.touchedCount == 2) {
-			dont_send_event = true;
-		}
-		else if (event.TouchInput.touchedCount > 2) {
-			errorstream
-			<< "GUIFormSpecMenu::preprocessEvent to many multitouch events "
-			<< event.TouchInput.touchedCount << " ignoring them" << std::endl;
-		}
-
-		if (dont_send_event) {
-			return true;
-		}
-
-		/* check if translated event needs to be preprocessed again */
-		if (preprocessEvent(translated)) {
-			return true;
-		}
-		if (hovered) {
-			grab();
-			bool retval = hovered->OnEvent(translated);
-
-			if (event.TouchInput.Event == ETIE_LEFT_UP) {
-				/* reset pointer */
-				m_pointer = v2s32(0,0);
-			}
-			drop();
-			return retval;
-		}
-	}
-	#endif
-
 	if (event.EventType == irr::EET_JOYSTICK_INPUT_EVENT) {
 		/* TODO add a check like:
 		if (event.JoystickEvent != joystick_we_listen_for)
@@ -3214,7 +3364,7 @@ bool GUIFormSpecMenu::preprocessEvent(const SEvent& event)
 		return handled;
 	}
 
-	return false;
+	return GUIModalMenu::preprocessEvent(event);
 }
 
 /******************************************************************************/
@@ -3560,7 +3710,7 @@ bool GUIFormSpecMenu::OnEvent(const SEvent& event)
 			// Mouse has been moved and rmb is down and mouse pointer just
 			// entered a new inventory field (checked in the entry-if, this
 			// is the only action here that is generated by mouse movement)
-			if (m_selected_item && s.isValid()) {
+			if (m_selected_item && s.isValid() && s.listname != "craftpreview") {
 				// Move 1 item
 				// TODO: middle mouse to move 10 items might be handy
 				if (m_auto_place) {

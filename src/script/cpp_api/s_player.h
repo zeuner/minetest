@@ -48,7 +48,7 @@ public:
 			v3f dir, s16 damage);
 	void on_rightclickplayer(ServerActiveObject *player,
 			ServerActiveObject *clicker);
-	s16 on_player_hpchange(ServerActiveObject *player, s16 hp_change,
+	s32 on_player_hpchange(ServerActiveObject *player, s32 hp_change,
 			const PlayerHPChangeReason &reason);
 	void on_playerReceiveFields(ServerActiveObject *player,
 			const std::string &formname, const StringMap &fields);

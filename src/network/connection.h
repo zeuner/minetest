@@ -103,16 +103,16 @@ struct BufferedPacket
 };
 
 // This adds the base headers to the data and makes a packet out of it
-BufferedPacket makePacket(Address &address, SharedBuffer<u8> data,
+BufferedPacket makePacket(Address &address, const SharedBuffer<u8> &data,
 		u32 protocol_id, session_t sender_peer_id, u8 channel);
 
 // Depending on size, make a TYPE_ORIGINAL or TYPE_SPLIT packet
 // Increments split_seqnum if a split packet is made
-void makeAutoSplitPacket(SharedBuffer<u8> data, u32 chunksize_max,
+void makeAutoSplitPacket(const SharedBuffer<u8> &data, u32 chunksize_max,
 		u16 &split_seqnum, std::list<SharedBuffer<u8>> *list);
 
 // Add the TYPE_RELIABLE header to the data
-SharedBuffer<u8> makeReliablePacket(SharedBuffer<u8> data, u16 seqnum);
+SharedBuffer<u8> makeReliablePacket(const SharedBuffer<u8> &data, u16 seqnum);
 
 struct IncomingSplitPacket
 {
@@ -581,15 +581,15 @@ class Peer {
 					return m_rtt.jitter_max;
 				case AVG_JITTER:
 					return m_rtt.jitter_avg;
-				case TIMEOUT_COUNTER:
-					return m_timeout_counter;
 			}
 			return -1;
 		}
 	protected:
 		virtual void reportRTT(float rtt) {};
 
-		void RTTStatistics(float rtt, const std::string &profiler_id = "");
+		void RTTStatistics(float rtt,
+							const std::string &profiler_id = "",
+							unsigned int num_samples = 1000);
 
 		bool IncUseCount();
 		void DecUseCount();

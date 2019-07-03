@@ -140,15 +140,15 @@ public:
 	{ return 0; }
 	virtual void rightClick(ServerActiveObject *clicker)
 	{}
-	virtual void setHP(s16 hp, const PlayerHPChangeReason &reason)
+	virtual void setHP(s32 hp, const PlayerHPChangeReason &reason)
 	{}
-	virtual s16 getHP() const
+	virtual u16 getHP() const
 	{ return 0; }
 
 	virtual void setArmorGroups(const ItemGroupList &armor_groups)
 	{}
 	virtual const ItemGroupList &getArmorGroups()
-	{ static const ItemGroupList rv; return rv; }
+	{ static ItemGroupList rv; return rv; }
 	virtual void setPhysicsOverride(float physics_override_speed, float physics_override_jump, float physics_override_gravity)
 	{}
 	virtual void setAnimation(v2f frames, float frame_speed, float frame_blend, bool frame_loop)
@@ -172,7 +172,7 @@ public:
 	virtual void removeAttachmentChild(int child_id)
 	{}
 	virtual const std::unordered_set<int> &getAttachmentChildIds()
-	{ static const std::unordered_set<int> rv; return rv; }
+	{ static std::unordered_set<int> rv; return rv; }
 	virtual ServerActiveObject *getParent() const { return nullptr; }
 	virtual ObjectProperties* accessObjectProperties()
 	{ return NULL; }

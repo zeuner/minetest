@@ -32,18 +32,21 @@ public:
 	UnitSAO(ServerEnvironment *env, v3f pos);
 	virtual ~UnitSAO() = default;
 
-	virtual void setYaw(const float yaw) { m_yaw = yaw; }
-	float getYaw() const { return m_yaw; };
-	f32 getRadYaw() const { return m_yaw * core::DEGTORAD; }
-	// Deprecated
-	f32 getRadYawDep() const { return (m_yaw + 90.) * core::DEGTORAD; }
+	void setRotation(v3f rotation) { m_rotation = rotation; }
+	const v3f &getRotation() const { return m_rotation; }
+	v3f getRadRotation() { return m_rotation * core::DEGTORAD; }
 
-	s16 getHP() const { return m_hp; }
+	// Deprecated
+	f32 getRadYawDep() const { return (m_rotation.Y + 90.) * core::DEGTORAD; }
+
+	u16 getHP() const { return m_hp; }
 	// Use a function, if isDead can be defined by other conditions
 	bool isDead() const { return m_hp == 0; }
 
 	inline bool isAttached() const
 	{ return getParent(); }
+	inline bool isImmortal() const
+	{ return itemgroup_get(m_armor_groups, "immortal"); }
 
 	void setArmorGroups(const ItemGroupList &armor_groups);
 	const ItemGroupList &getArmorGroups();
@@ -63,8 +66,9 @@ public:
 	ObjectProperties* accessObjectProperties();
 	void notifyObjectPropertiesModified();
 protected:
-	s16 m_hp = -1;
-	float m_yaw = 0.0f;
+	u16 m_hp = 1;
+
+	v3f m_rotation;
 
 	bool m_properties_sent = true;
 	ObjectProperties m_prop;
@@ -125,8 +129,8 @@ public:
 	void moveTo(v3f pos, bool continuous);
 	float getMinimumSavedMovement();
 	std::string getDescription();
-	void setHP(s16 hp, const PlayerHPChangeReason &reason);
-	s16 getHP() const;
+	void setHP(s32 hp, const PlayerHPChangeReason &reason);
+	u16 getHP() const;
 	/* LuaEntitySAO-specific */
 	void setVelocity(v3f velocity);
 	void addVelocity(v3f velocity)
@@ -156,9 +160,9 @@ private:
 	v3f m_velocity;
 	v3f m_acceleration;
 
-	float m_last_sent_yaw = 0.0f;
 	v3f m_last_sent_position;
 	v3f m_last_sent_velocity;
+	v3f m_last_sent_rotation;
 	float m_last_sent_position_timer = 0.0f;
 	float m_last_sent_move_precision = 0.0f;
 	std::string m_current_texture_modifier = "";
@@ -232,16 +236,16 @@ public:
 	void setBasePosition(const v3f &position);
 	void setPos(const v3f &pos);
 	void moveTo(v3f pos, bool continuous);
-	void setYaw(const float yaw);
+	void setPlayerYaw(const float yaw);
 	// Data should not be sent at player initialization
-	void setYawAndSend(const float yaw);
-	void setPitch(const float pitch);
+	void setPlayerYawAndSend(const float yaw);
+	void setLookPitch(const float pitch);
 	// Data should not be sent at player initialization
-	void setPitchAndSend(const float pitch);
-	f32 getPitch() const { return m_pitch; }
-	f32 getRadPitch() const { return m_pitch * core::DEGTORAD; }
+	void setLookPitchAndSend(const float pitch);
+	f32 getLookPitch() const { return m_pitch; }
+	f32 getRadLookPitch() const { return m_pitch * core::DEGTORAD; }
 	// Deprecated
-	f32 getRadPitchDep() const { return -1.0 * m_pitch * core::DEGTORAD; }
+	f32 getRadLookPitchDep() const { return -1.0 * m_pitch * core::DEGTORAD; }
 	void setFov(const float pitch);
 	f32 getFov() const { return m_fov; }
 	void setWantedRange(const s16 range);
@@ -256,8 +260,8 @@ public:
 		ServerActiveObject *puncher,
 		float time_from_last_punch);
 	void rightClick(ServerActiveObject *clicker);
-	void setHP(s16 hp, const PlayerHPChangeReason &reason);
-	void setHPRaw(s16 hp) { m_hp = hp; }
+	void setHP(s32 hp, const PlayerHPChangeReason &reason);
+	void setHPRaw(u16 hp) { m_hp = hp; }
 	s16 readDamage();
 	u16 getBreath() const { return m_breath; }
 	void setBreath(const u16 breath, bool send = true);
@@ -349,7 +353,6 @@ private:
 	RemotePlayer *m_player = nullptr;
 	session_t m_peer_id = 0;
 	Inventory *m_inventory = nullptr;
-	s16 m_damage = 0;
 
 	// Cheat prevention
 	LagPool m_dig_pool;
@@ -400,9 +403,18 @@ struct PlayerHPChangeReason {
 	};
 
 	Type type = SET_HP;
-	ServerActiveObject *object;
 	bool from_mod = false;
 	int lua_reference = -1;
+
+	// For PLAYER_PUNCH
+	ServerActiveObject *object = nullptr;
+	// For NODE_DAMAGE
+	std::string node;
+
+	inline bool hasLuaReference() const
+	{
+		return lua_reference >= 0;
+	}
 
 	bool setTypeFromString(const std::string &typestr)
 	{
@@ -444,7 +456,15 @@ struct PlayerHPChangeReason {
 		}
 	}
 
-	PlayerHPChangeReason(Type type, ServerActiveObject *object=NULL):
+	PlayerHPChangeReason(Type type):
+			type(type)
+	{}
+
+	PlayerHPChangeReason(Type type, ServerActiveObject *object):
 			type(type), object(object)
+	{}
+
+	PlayerHPChangeReason(Type type, std::string node):
+			type(type), node(node)
 	{}
 };

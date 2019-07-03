@@ -132,6 +132,23 @@ struct CraftReplacements
 class CraftDefinition
 {
 public:
+	/*
+		Craft recipe priorities, from low to high
+
+		Recipes are searched from latest to first.
+		If a recipe with higher priority than a previous found one is
+		encountered, it is selected instead.
+	*/
+	enum RecipePriority
+	{
+		NO_RECIPE,
+		TOOLREPAIR,
+		SHAPELESS_AND_GROUPS,
+		SHAPELESS,
+		SHAPED_AND_GROUPS,
+		SHAPED,
+	};
+
 	CraftDefinition() = default;
 	virtual ~CraftDefinition() = default;
 
@@ -140,6 +157,10 @@ public:
 
 	// Checks whether the recipe is applicable
 	virtual bool check(const CraftInput &input, IGameDef *gamedef) const=0;
+	RecipePriority getPriority() const
+	{
+		return priority;
+	}
 	// Returns the output structure, meaning depends on crafting method
 	// The implementation can assume that check(input) returns true
 	virtual CraftOutput getOutput(const CraftInput &input, IGameDef *gamedef) const=0;
@@ -149,13 +170,20 @@ public:
 	virtual void decrementInput(CraftInput &input,
 		std::vector<ItemStack> &output_replacements, IGameDef *gamedef) const=0;
 
-	virtual CraftHashType getHashType() const = 0;
+	CraftHashType getHashType() const
+	{
+		return hash_type;
+	}
 	virtual u64 getHash(CraftHashType type) const = 0;
 
 	// to be called after all mods are loaded, so that we catch all aliases
 	virtual void initHash(IGameDef *gamedef) = 0;
 
 	virtual std::string dump() const=0;
+
+protected:
+	CraftHashType hash_type;
+	RecipePriority priority;
 };
 
 /*
@@ -186,7 +214,6 @@ public:
 	virtual void decrementInput(CraftInput &input,
 		std::vector<ItemStack> &output_replacements, IGameDef *gamedef) const;
 
-	virtual CraftHashType getHashType() const;
 	virtual u64 getHash(CraftHashType type) const;
 
 	virtual void initHash(IGameDef *gamedef);
@@ -232,7 +259,6 @@ public:
 	virtual void decrementInput(CraftInput &input,
 		std::vector<ItemStack> &output_replacements, IGameDef *gamedef) const;
 
-	virtual CraftHashType getHashType() const;
 	virtual u64 getHash(CraftHashType type) const;
 
 	virtual void initHash(IGameDef *gamedef);
@@ -274,10 +300,13 @@ public:
 	virtual void decrementInput(CraftInput &input,
 		std::vector<ItemStack> &output_replacements, IGameDef *gamedef) const;
 
-	virtual CraftHashType getHashType() const { return CRAFT_HASH_TYPE_COUNT; }
 	virtual u64 getHash(CraftHashType type) const { return 2; }
 
-	virtual void initHash(IGameDef *gamedef) {}
+	virtual void initHash(IGameDef *gamedef)
+	{
+		hash_type = CRAFT_HASH_TYPE_COUNT;
+		priority = TOOLREPAIR;
+	}
 
 	virtual std::string dump() const;
 
@@ -314,7 +343,6 @@ public:
 	virtual void decrementInput(CraftInput &input,
 		std::vector<ItemStack> &output_replacements, IGameDef *gamedef) const;
 
-	virtual CraftHashType getHashType() const;
 	virtual u64 getHash(CraftHashType type) const;
 
 	virtual void initHash(IGameDef *gamedef);
@@ -358,7 +386,6 @@ public:
 	virtual void decrementInput(CraftInput &input,
 		std::vector<ItemStack> &output_replacements, IGameDef *gamedef) const;
 
-	virtual CraftHashType getHashType() const;
 	virtual u64 getHash(CraftHashType type) const;
 
 	virtual void initHash(IGameDef *gamedef);

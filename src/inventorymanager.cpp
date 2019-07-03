@@ -93,7 +93,7 @@ void InventoryLocation::deSerialize(std::istream &is)
 	}
 }
 
-void InventoryLocation::deSerialize(std::string s)
+void InventoryLocation::deSerialize(const std::string &s)
 {
 	std::istringstream is(s, std::ios::binary);
 	deSerialize(is);
@@ -846,7 +846,7 @@ void ICraftAction::apply(InventoryManager *mgr,
 			count_remaining--;
 
 		// Get next crafting result
-		found = getCraftingResult(inv_craft, crafted, temp, false, gamedef);
+		getCraftingResult(inv_craft, crafted, temp, false, gamedef);
 		PLAYER_TO_SA(player)->item_CraftPredict(crafted, player, list_craft, craft_inv);
 		found = !crafted.empty();
 	}

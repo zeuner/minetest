@@ -56,7 +56,7 @@ std::mutex log_message_mutex;
 
 #define PING_TIMEOUT 5.0
 
-BufferedPacket makePacket(Address &address, SharedBuffer<u8> data,
+BufferedPacket makePacket(Address &address, const SharedBuffer<u8> &data,
 		u32 protocol_id, session_t sender_peer_id, u8 channel)
 {
 	u32 packet_size = data.getSize() + BASE_HEADER_SIZE;
@@ -126,7 +126,7 @@ void makeSplitPacket(const SharedBuffer<u8> &data, u32 chunksize_max, u16 seqnum
 	}
 }
 
-void makeAutoSplitPacket(SharedBuffer<u8> data, u32 chunksize_max,
+void makeAutoSplitPacket(const SharedBuffer<u8> &data, u32 chunksize_max,
 		u16 &split_seqnum, std::list<SharedBuffer<u8>> *list)
 {
 	u32 original_header_size = 1;
@@ -140,7 +140,7 @@ void makeAutoSplitPacket(SharedBuffer<u8> data, u32 chunksize_max,
 	list->push_back(makeOriginalPacket(data));
 }
 
-SharedBuffer<u8> makeReliablePacket(SharedBuffer<u8> data, u16 seqnum)
+SharedBuffer<u8> makeReliablePacket(const SharedBuffer<u8> &data, u16 seqnum)
 {
 	u32 header_size = 3;
 	u32 packet_size = data.getSize() + header_size;
@@ -809,9 +809,8 @@ void Peer::DecUseCount()
 	delete this;
 }
 
-void Peer::RTTStatistics(float rtt, const std::string &profiler_id)
-{
-	static const float avg_factor = 100.0f / MAX_RELIABLE_WINDOW_SIZE;
+void Peer::RTTStatistics(float rtt, const std::string &profiler_id,
+		unsigned int num_samples) {
 
 	if (m_last_rtt > 0) {
 		/* set min max values */
@@ -822,14 +821,21 @@ void Peer::RTTStatistics(float rtt, const std::string &profiler_id)
 
 		/* do average calculation */
 		if (m_rtt.avg_rtt < 0.0)
-			m_rtt.avg_rtt = rtt;
+			m_rtt.avg_rtt  = rtt;
 		else
-			m_rtt.avg_rtt += (rtt - m_rtt.avg_rtt) * avg_factor;
+			m_rtt.avg_rtt  = m_rtt.avg_rtt * (num_samples/(num_samples-1)) +
+								rtt * (1/num_samples);
 
 		/* do jitter calculation */
 
 		//just use some neutral value at beginning
-		float jitter = std::fabs(rtt - m_last_rtt);
+		float jitter = m_rtt.jitter_min;
+
+		if (rtt > m_last_rtt)
+			jitter = rtt-m_last_rtt;
+
+		if (rtt <= m_last_rtt)
+			jitter = m_last_rtt - rtt;
 
 		if (jitter < m_rtt.jitter_min)
 			m_rtt.jitter_min = jitter;
@@ -837,9 +843,10 @@ void Peer::RTTStatistics(float rtt, const std::string &profiler_id)
 			m_rtt.jitter_max = jitter;
 
 		if (m_rtt.jitter_avg < 0.0)
-			m_rtt.jitter_avg = jitter;
+			m_rtt.jitter_avg  = jitter;
 		else
-			m_rtt.jitter_avg += (jitter - m_rtt.jitter_avg) * avg_factor;
+			m_rtt.jitter_avg  = m_rtt.jitter_avg * (num_samples/(num_samples-1)) +
+								jitter * (1/num_samples);
 
 		if (!profiler_id.empty()) {
 			g_profiler->graphAdd(profiler_id + "_rtt", rtt);
@@ -904,12 +911,16 @@ bool UDPPeer::getAddress(MTProtocols type,Address& toset)
 
 void UDPPeer::reportRTT(float rtt)
 {
-	assert(rtt >= 0.0f);
-
-	RTTStatistics(rtt, "rudp");
+	if (rtt < 0.0) {
+		return;
+	}
+	RTTStatistics(rtt,"rudp",MAX_RELIABLE_WINDOW_SIZE*10);
 
 	float timeout = getStat(AVG_RTT) * RESEND_TIMEOUT_FACTOR;
-	timeout = rangelim(timeout, RESEND_TIMEOUT_MIN, RESEND_TIMEOUT_MAX);
+	if (timeout < RESEND_TIMEOUT_MIN)
+		timeout = RESEND_TIMEOUT_MIN;
+	if (timeout > RESEND_TIMEOUT_MAX)
+		timeout = RESEND_TIMEOUT_MAX;
 
 	MutexAutoLock usage_lock(m_exclusive_access_mutex);
 	resend_timeout = timeout;

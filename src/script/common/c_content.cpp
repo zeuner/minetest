@@ -191,7 +191,7 @@ void read_object_properties(lua_State *L, int index,
 
 	int hp_max = 0;
 	if (getintfield(L, -1, "hp_max", hp_max))
-		prop->hp_max = (s16)rangelim(hp_max, 0, S16_MAX);
+		prop->hp_max = (u16)rangelim(hp_max, 0, U16_MAX);
 
 	getintfield(L, -1, "breath_max", prop->breath_max);
 	getboolfield(L, -1, "physical", prop->physical);
@@ -218,8 +218,18 @@ void read_object_properties(lua_State *L, int index,
 	getstringfield(L, -1, "mesh", prop->mesh);
 
 	lua_getfield(L, -1, "visual_size");
-	if(lua_istable(L, -1))
-		prop->visual_size = read_v2f(L, -1);
+	if (lua_istable(L, -1)) {
+		// Backwards compatibility: Also accept { x = ?, y = ? }
+		v2f scale_xy = read_v2f(L, -1);
+
+		f32 scale_z = scale_xy.X;
+		lua_getfield(L, -1, "z");
+		if (lua_isnumber(L, -1))
+			scale_z = lua_tonumber(L, -1);
+		lua_pop(L, 1);
+
+		prop->visual_size = v3f(scale_xy.X, scale_xy.Y, scale_z);
+	}
 	lua_pop(L, 1);
 
 	lua_getfield(L, -1, "textures");
@@ -331,14 +341,14 @@ void push_object_properties(lua_State *L, ObjectProperties *prop)
 	lua_setfield(L, -2, "visual");
 	lua_pushlstring(L, prop->mesh.c_str(), prop->mesh.size());
 	lua_setfield(L, -2, "mesh");
-	push_v2f(L, prop->visual_size);
+	push_v3f(L, prop->visual_size);
 	lua_setfield(L, -2, "visual_size");
 
 	lua_newtable(L);
 	u16 i = 1;
 	for (const std::string &texture : prop->textures) {
 		lua_pushlstring(L, texture.c_str(), texture.size());
-		lua_rawseti(L, -2, i);
+		lua_rawseti(L, -2, i++);
 	}
 	lua_setfield(L, -2, "textures");
 
@@ -346,7 +356,7 @@ void push_object_properties(lua_State *L, ObjectProperties *prop)
 	i = 1;
 	for (const video::SColor &color : prop->colors) {
 		push_ARGB8(L, color);
-		lua_rawseti(L, -2, i);
+		lua_rawseti(L, -2, i++);
 	}
 	lua_setfield(L, -2, "colors");
 
@@ -828,7 +838,7 @@ void push_content_features(lua_State *L, const ContentFeatures &c)
 	u16 i = 1;
 	for (const std::string &it : c.connects_to) {
 		lua_pushlstring(L, it.c_str(), it.size());
-		lua_rawseti(L, -2, i);
+		lua_rawseti(L, -2, i++);
 	}
 	lua_setfield(L, -2, "connects_to");
 
@@ -951,7 +961,7 @@ void push_box(lua_State *L, const std::vector<aabb3f> &box)
 	u8 i = 1;
 	for (const aabb3f &it : box) {
 		push_aabb3f(L, it);
-		lua_rawseti(L, -2, i);
+		lua_rawseti(L, -2, i++);
 	}
 }
 
@@ -1083,7 +1093,7 @@ MapNode readnode(lua_State *L, int index, const NodeDefManager *ndef)
 	lua_getfield(L, index, "name");
 	if (!lua_isstring(L, -1))
 		throw LuaError("Node name is not set or is not a string!");
-	const char *name = lua_tostring(L, -1);
+	std::string name = lua_tostring(L, -1);
 	lua_pop(L, 1);
 
 	u8 param1 = 0;
@@ -1098,7 +1108,11 @@ MapNode readnode(lua_State *L, int index, const NodeDefManager *ndef)
 		param2 = lua_tonumber(L, -1);
 	lua_pop(L, 1);
 
-	return {ndef, name, param1, param2};
+	content_t id = CONTENT_IGNORE;
+	if (!ndef->getId(name, id))
+		throw LuaError("\"" + name + "\" is not a registered node!");
+
+	return {id, param1, param2};
 }
 
 /******************************************************************************/

@@ -170,8 +170,8 @@ int ObjectRef::l_punch(lua_State *L)
 	ObjectRef *puncher_ref = checkobject(L, 2);
 	ServerActiveObject *co = getobject(ref);
 	ServerActiveObject *puncher = getobject(puncher_ref);
-	if (co == NULL) return 0;
-	if (puncher == NULL) return 0;
+	if (!co || !puncher)
+		return 0;
 	v3f dir;
 	if (lua_type(L, 5) != LUA_TTABLE)
 		dir = co->getBasePosition() - puncher->getBasePosition();
@@ -183,8 +183,8 @@ int ObjectRef::l_punch(lua_State *L)
 	ToolCapabilities toolcap = read_tool_capabilities(L, 4);
 	dir.normalize();
 
-	s16 src_original_hp = co->getHP();
-	s16 dst_origin_hp = puncher->getHP();
+	u16 src_original_hp = co->getHP();
+	u16 dst_origin_hp = puncher->getHP();
 
 	// Do it
 	co->punch(dir, &toolcap, puncher, time_from_last_punch);
@@ -192,7 +192,8 @@ int ObjectRef::l_punch(lua_State *L)
 	// If the punched is a player, and its HP changed
 	if (src_original_hp != co->getHP() &&
 			co->getType() == ACTIVEOBJECT_TYPE_PLAYER) {
-		getServer(L)->SendPlayerHPOrDie((PlayerSAO *)co, PlayerHPChangeReason(PlayerHPChangeReason::PLAYER_PUNCH, puncher));
+		getServer(L)->SendPlayerHPOrDie((PlayerSAO *)co,
+				PlayerHPChangeReason(PlayerHPChangeReason::PLAYER_PUNCH, puncher));
 	}
 
 	// If the puncher is a player, and its HP changed
@@ -256,6 +257,9 @@ int ObjectRef::l_set_hp(lua_State *L)
 	co->setHP(hp, reason);
 	if (co->getType() == ACTIVEOBJECT_TYPE_PLAYER)
 		getServer(L)->SendPlayerHPOrDie((PlayerSAO *)co, reason);
+
+	if (reason.hasLuaReference())
+		luaL_unref(L, LUA_REGISTRYINDEX, reason.lua_reference);
 
 	// Return
 	return 0;
@@ -580,6 +584,24 @@ int ObjectRef::l_get_eye_offset(lua_State *L)
 	return 2;
 }
 
+// send_mapblock(self, pos)
+int ObjectRef::l_send_mapblock(lua_State *L)
+{
+	NO_MAP_LOCK_REQUIRED;
+	ObjectRef *ref = checkobject(L, 1);
+
+	RemotePlayer *player = getplayer(ref);
+	if (!player)
+		return 0;
+	v3s16 p = read_v3s16(L, 2);
+
+	session_t peer_id = player->getPeerId();
+	bool r = getServer(L)->SendBlock(peer_id, p);
+
+	lua_pushboolean(L, r);
+	return 1;
+}
+
 // set_animation_frame_speed(self, frame_speed)
 int ObjectRef::l_set_animation_frame_speed(lua_State *L)
 {
@@ -728,17 +750,27 @@ int ObjectRef::l_set_properties(lua_State *L)
 	NO_MAP_LOCK_REQUIRED;
 	ObjectRef *ref = checkobject(L, 1);
 	ServerActiveObject *co = getobject(ref);
-	if (co == NULL) return 0;
+	if (!co)
+		return 0;
+
 	ObjectProperties *prop = co->accessObjectProperties();
 	if (!prop)
 		return 0;
+
 	read_object_properties(L, 2, prop, getServer(L)->idef());
+
+	PlayerSAO *player = getplayersao(ref);
+
 	if (prop->hp_max < co->getHP()) {
 		PlayerHPChangeReason reason(PlayerHPChangeReason::SET_HP);
 		co->setHP(prop->hp_max, reason);
-		if (co->getType() == ACTIVEOBJECT_TYPE_PLAYER)
-			getServer(L)->SendPlayerHPOrDie((PlayerSAO *)co, reason);
+		if (player)
+			getServer(L)->SendPlayerHPOrDie(player, reason);
 	}
+
+	if (player && prop->breath_max < player->getBreath())
+		player->setBreath(prop->breath_max);
+
 	co->notifyObjectPropertiesModified();
 	return 0;
 }
@@ -889,19 +921,51 @@ int ObjectRef::l_get_acceleration(lua_State *L)
 	return 1;
 }
 
+// set_rotation(self, {x=num, y=num, z=num})
+// Each 'num' is in radians
+int ObjectRef::l_set_rotation(lua_State *L)
+{
+	NO_MAP_LOCK_REQUIRED;
+	ObjectRef *ref = checkobject(L, 1);
+	LuaEntitySAO *co = getluaobject(ref);
+	if (!co)
+		return 0;
+
+	v3f rotation = check_v3f(L, 2) * core::RADTODEG;
+	co->setRotation(rotation);
+	return 0;
+}
+
+// get_rotation(self)
+// returns: {x=num, y=num, z=num}
+// Each 'num' is in radians
+int ObjectRef::l_get_rotation(lua_State *L)
+{
+	NO_MAP_LOCK_REQUIRED;
+	ObjectRef *ref = checkobject(L, 1);
+	LuaEntitySAO *co = getluaobject(ref);
+	if (!co)
+		return 0;
+
+	lua_newtable(L);
+	v3f rotation = co->getRotation() * core::DEGTORAD;
+	push_v3f(L, rotation);
+	return 1;
+}
+
 // set_yaw(self, radians)
 int ObjectRef::l_set_yaw(lua_State *L)
 {
 	NO_MAP_LOCK_REQUIRED;
 	ObjectRef *ref = checkobject(L, 1);
 	LuaEntitySAO *co = getluaobject(ref);
+
 	if (co == NULL) return 0;
 	if (isNaN(L, 2))
 		throw LuaError("ObjectRef::set_yaw: NaN value is not allowed.");
 
 	float yaw = readParam<float>(L, 2) * core::RADTODEG;
-	// Do it
-	co->setYaw(yaw);
+	co->setRotation(v3f(0, yaw, 0));
 	return 0;
 }
 
@@ -911,9 +975,10 @@ int ObjectRef::l_get_yaw(lua_State *L)
 	NO_MAP_LOCK_REQUIRED;
 	ObjectRef *ref = checkobject(L, 1);
 	LuaEntitySAO *co = getluaobject(ref);
-	if (co == NULL) return 0;
-	// Do it
-	float yaw = co->getYaw() * core::DEGTORAD;
+	if (!co)
+		return 0;
+
+	float yaw = co->getRotation().Y * core::DEGTORAD;
 	lua_pushnumber(L, yaw);
 	return 1;
 }
@@ -1046,7 +1111,7 @@ int ObjectRef::l_get_look_dir(lua_State *L)
 	PlayerSAO* co = getplayersao(ref);
 	if (co == NULL) return 0;
 	// Do it
-	float pitch = co->getRadPitchDep();
+	float pitch = co->getRadLookPitchDep();
 	float yaw = co->getRadYawDep();
 	v3f v(std::cos(pitch) * std::cos(yaw), std::sin(pitch), std::cos(pitch) *
 		std::sin(yaw));
@@ -1067,7 +1132,7 @@ int ObjectRef::l_get_look_pitch(lua_State *L)
 	PlayerSAO* co = getplayersao(ref);
 	if (co == NULL) return 0;
 	// Do it
-	lua_pushnumber(L, co->getRadPitchDep());
+	lua_pushnumber(L, co->getRadLookPitchDep());
 	return 1;
 }
 
@@ -1096,7 +1161,7 @@ int ObjectRef::l_get_look_vertical(lua_State *L)
 	PlayerSAO* co = getplayersao(ref);
 	if (co == NULL) return 0;
 	// Do it
-	lua_pushnumber(L, co->getRadPitch());
+	lua_pushnumber(L, co->getRadLookPitch());
 	return 1;
 }
 
@@ -1108,7 +1173,7 @@ int ObjectRef::l_get_look_horizontal(lua_State *L)
 	PlayerSAO* co = getplayersao(ref);
 	if (co == NULL) return 0;
 	// Do it
-	lua_pushnumber(L, co->getRadYaw());
+	lua_pushnumber(L, co->getRadRotation().Y);
 	return 1;
 }
 
@@ -1121,7 +1186,7 @@ int ObjectRef::l_set_look_vertical(lua_State *L)
 	if (co == NULL) return 0;
 	float pitch = readParam<float>(L, 2) * core::RADTODEG;
 	// Do it
-	co->setPitchAndSend(pitch);
+	co->setLookPitchAndSend(pitch);
 	return 1;
 }
 
@@ -1134,7 +1199,7 @@ int ObjectRef::l_set_look_horizontal(lua_State *L)
 	if (co == NULL) return 0;
 	float yaw = readParam<float>(L, 2) * core::RADTODEG;
 	// Do it
-	co->setYawAndSend(yaw);
+	co->setPlayerYawAndSend(yaw);
 	return 1;
 }
 
@@ -1152,7 +1217,7 @@ int ObjectRef::l_set_look_pitch(lua_State *L)
 	if (co == NULL) return 0;
 	float pitch = readParam<float>(L, 2) * core::RADTODEG;
 	// Do it
-	co->setPitchAndSend(pitch);
+	co->setLookPitchAndSend(pitch);
 	return 1;
 }
 
@@ -1170,7 +1235,7 @@ int ObjectRef::l_set_look_yaw(lua_State *L)
 	if (co == NULL) return 0;
 	float yaw = readParam<float>(L, 2) * core::RADTODEG;
 	// Do it
-	co->setYawAndSend(yaw);
+	co->setPlayerYawAndSend(yaw);
 	return 1;
 }
 
@@ -1203,6 +1268,9 @@ int ObjectRef::l_get_breath(lua_State *L)
 // set_attribute(self, attribute, value)
 int ObjectRef::l_set_attribute(lua_State *L)
 {
+	log_deprecated(L,
+		"Deprecated call to set_attribute, use MetaDataRef methods instead.");
+
 	ObjectRef *ref = checkobject(L, 1);
 	PlayerSAO* co = getplayersao(ref);
 	if (co == NULL)
@@ -1221,6 +1289,9 @@ int ObjectRef::l_set_attribute(lua_State *L)
 // get_attribute(self, attribute)
 int ObjectRef::l_get_attribute(lua_State *L)
 {
+	log_deprecated(L,
+		"Deprecated call to get_attribute, use MetaDataRef methods instead.");
+
 	ObjectRef *ref = checkobject(L, 1);
 	PlayerSAO* co = getplayersao(ref);
 	if (co == NULL)
@@ -1648,8 +1719,7 @@ int ObjectRef::l_get_sky(lua_State *L)
 	s16 i = 1;
 	for (const std::string &param : params) {
 		lua_pushlstring(L, param.c_str(), param.size());
-		lua_rawseti(L, -2, i);
-		i++;
+		lua_rawseti(L, -2, i++);
 	}
 	lua_pushboolean(L, clouds);
 	return 4;
@@ -1861,6 +1931,8 @@ luaL_Reg ObjectRef::methods[] = {
 	luamethod_aliased(ObjectRef, get_acceleration, getacceleration),
 	luamethod_aliased(ObjectRef, set_yaw, setyaw),
 	luamethod_aliased(ObjectRef, get_yaw, getyaw),
+	luamethod(ObjectRef, set_rotation),
+	luamethod(ObjectRef, get_rotation),
 	luamethod_aliased(ObjectRef, set_texture_mod, settexturemod),
 	luamethod_aliased(ObjectRef, set_sprite, setsprite),
 	luamethod(ObjectRef, get_entity_name),
@@ -1914,5 +1986,6 @@ luaL_Reg ObjectRef::methods[] = {
 	luamethod(ObjectRef, get_local_animation),
 	luamethod(ObjectRef, set_eye_offset),
 	luamethod(ObjectRef, get_eye_offset),
+	luamethod(ObjectRef, send_mapblock),
 	{0,0}
 };

@@ -139,7 +139,12 @@ bool RollbackAction::applyRevert(Map *map, InventoryManager *imgr, IGameDef *gam
 				return false;
 			}
 			// Create rollback node
-			MapNode n(ndef, n_old.name, n_old.param1, n_old.param2);
+			content_t id = CONTENT_IGNORE;
+			if (!ndef->getId(n_old.name, id)) {
+				// The old node is not registered
+				return false;
+			}
+			MapNode n(id, n_old.param1, n_old.param2);
 			// Set rollback node
 			try {
 				if (!map->addNodeWithEvent(p, n)) {
@@ -168,17 +173,10 @@ bool RollbackAction::applyRevert(Map *map, InventoryManager *imgr, IGameDef *gam
 					meta->deSerialize(is, 1); // FIXME: version bump??
 				}
 				// Inform other things that the meta data has changed
-				v3s16 blockpos = getContainerPos(p, MAP_BLOCKSIZE);
 				MapEditEvent event;
 				event.type = MEET_BLOCK_NODE_METADATA_CHANGED;
-				event.p = blockpos;
+				event.p = p;
 				map->dispatchEvent(&event);
-				// Set the block to be saved
-				MapBlock *block = map->getBlockNoCreateNoEx(blockpos);
-				if (block) {
-					block->raiseModified(MOD_STATE_WRITE_NEEDED,
-						MOD_REASON_REPORT_META_CHANGE);
-				}
 			} catch (InvalidPositionException &e) {
 				infostream << "RollbackAction::applyRevert(): "
 					<< "InvalidPositionException: " << e.what()
@@ -210,7 +208,7 @@ bool RollbackAction::applyRevert(Map *map, InventoryManager *imgr, IGameDef *gam
 					<< inventory_location << std::endl;
 				return false;
 			}
-			
+
 			// If item was added, take away item, otherwise add removed item
 			if (inventory_add) {
 				// Silently ignore different current item

@@ -7,9 +7,11 @@ set(gui_SRCS
 	${CMAKE_CURRENT_SOURCE_DIR}/guiKeyChangeMenu.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/guiPasswordChange.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/guiPathSelectMenu.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/guiScrollBar.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/guiTable.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/guiVolumeChange.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/intlGUIEditBox.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/modalMenu.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/profilergraph.cpp
 	PARENT_SCOPE
 )
