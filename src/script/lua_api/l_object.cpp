@@ -170,8 +170,8 @@ int ObjectRef::l_punch(lua_State *L)
 	ObjectRef *puncher_ref = checkobject(L, 2);
 	ServerActiveObject *co = getobject(ref);
 	ServerActiveObject *puncher = getobject(puncher_ref);
-	if (co == NULL) return 0;
-	if (puncher == NULL) return 0;
+	if (!co || !puncher)
+		return 0;
 	v3f dir;
 	if (lua_type(L, 5) != LUA_TTABLE)
 		dir = co->getBasePosition() - puncher->getBasePosition();
@@ -192,7 +192,8 @@ int ObjectRef::l_punch(lua_State *L)
 	// If the punched is a player, and its HP changed
 	if (src_original_hp != co->getHP() &&
 			co->getType() == ACTIVEOBJECT_TYPE_PLAYER) {
-		getServer(L)->SendPlayerHPOrDie((PlayerSAO *)co, PlayerHPChangeReason(PlayerHPChangeReason::PLAYER_PUNCH, puncher));
+		getServer(L)->SendPlayerHPOrDie((PlayerSAO *)co,
+				PlayerHPChangeReason(PlayerHPChangeReason::PLAYER_PUNCH, puncher));
 	}
 
 	// If the puncher is a player, and its HP changed
@@ -256,6 +257,9 @@ int ObjectRef::l_set_hp(lua_State *L)
 	co->setHP(hp, reason);
 	if (co->getType() == ACTIVEOBJECT_TYPE_PLAYER)
 		getServer(L)->SendPlayerHPOrDie((PlayerSAO *)co, reason);
+
+	if (reason.hasLuaReference())
+		luaL_unref(L, LUA_REGISTRYINDEX, reason.lua_reference);
 
 	// Return
 	return 0;
@@ -580,6 +584,24 @@ int ObjectRef::l_get_eye_offset(lua_State *L)
 	return 2;
 }
 
+// send_mapblock(self, pos)
+int ObjectRef::l_send_mapblock(lua_State *L)
+{
+	NO_MAP_LOCK_REQUIRED;
+	ObjectRef *ref = checkobject(L, 1);
+
+	RemotePlayer *player = getplayer(ref);
+	if (!player)
+		return 0;
+	v3s16 p = read_v3s16(L, 2);
+
+	session_t peer_id = player->getPeerId();
+	bool r = getServer(L)->SendBlock(peer_id, p);
+
+	lua_pushboolean(L, r);
+	return 1;
+}
+
 // set_animation_frame_speed(self, frame_speed)
 int ObjectRef::l_set_animation_frame_speed(lua_State *L)
 {
@@ -728,17 +750,27 @@ int ObjectRef::l_set_properties(lua_State *L)
 	NO_MAP_LOCK_REQUIRED;
 	ObjectRef *ref = checkobject(L, 1);
 	ServerActiveObject *co = getobject(ref);
-	if (co == NULL) return 0;
+	if (!co)
+		return 0;
+
 	ObjectProperties *prop = co->accessObjectProperties();
 	if (!prop)
 		return 0;
+
 	read_object_properties(L, 2, prop, getServer(L)->idef());
+
+	PlayerSAO *player = getplayersao(ref);
+
 	if (prop->hp_max < co->getHP()) {
 		PlayerHPChangeReason reason(PlayerHPChangeReason::SET_HP);
 		co->setHP(prop->hp_max, reason);
-		if (co->getType() == ACTIVEOBJECT_TYPE_PLAYER)
-			getServer(L)->SendPlayerHPOrDie((PlayerSAO *)co, reason);
+		if (player)
+			getServer(L)->SendPlayerHPOrDie(player, reason);
 	}
+
+	if (player && prop->breath_max < player->getBreath())
+		player->setBreath(prop->breath_max);
+
 	co->notifyObjectPropertiesModified();
 	return 0;
 }
@@ -1236,6 +1268,9 @@ int ObjectRef::l_get_breath(lua_State *L)
 // set_attribute(self, attribute, value)
 int ObjectRef::l_set_attribute(lua_State *L)
 {
+	log_deprecated(L,
+		"Deprecated call to set_attribute, use MetaDataRef methods instead.");
+
 	ObjectRef *ref = checkobject(L, 1);
 	PlayerSAO* co = getplayersao(ref);
 	if (co == NULL)
@@ -1254,6 +1289,9 @@ int ObjectRef::l_set_attribute(lua_State *L)
 // get_attribute(self, attribute)
 int ObjectRef::l_get_attribute(lua_State *L)
 {
+	log_deprecated(L,
+		"Deprecated call to get_attribute, use MetaDataRef methods instead.");
+
 	ObjectRef *ref = checkobject(L, 1);
 	PlayerSAO* co = getplayersao(ref);
 	if (co == NULL)
@@ -1948,5 +1986,6 @@ luaL_Reg ObjectRef::methods[] = {
 	luamethod(ObjectRef, get_local_animation),
 	luamethod(ObjectRef, set_eye_offset),
 	luamethod(ObjectRef, get_eye_offset),
+	luamethod(ObjectRef, send_mapblock),
 	{0,0}
 };

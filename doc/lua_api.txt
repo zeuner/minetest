@@ -4,9 +4,8 @@ Minetest Lua Modding API Reference
 * More information at <http://www.minetest.net/>
 * Developer Wiki: <http://dev.minetest.net/>
 
-
 Introduction
-============
+------------
 
 Content and functionality can be added to Minetest using Lua scripting
 in run-time loaded mods.
@@ -283,36 +282,26 @@ Mapgen aliases
 --------------
 
 In a game, a certain number of these must be set to tell core mapgens which
-of the game's nodes are to be used by the core mapgens. For example:
+of the game's nodes are to be used for core mapgen generation. For example:
 
     minetest.register_alias("mapgen_stone", "default:stone")
 
 ### Aliases needed for all mapgens except Mapgen V6
 
-#### Base terrain
-
 * mapgen_stone
 * mapgen_water_source
 * mapgen_river_water_source
 
-#### Caves
+`mapgen_river_water_source` is required for mapgens with sloping rivers where
+it is necessary to have a river liquid node with a short `liquid_range` and
+`liquid_renewable = false` to avoid flooding.
 
-Not required if cave liquid nodes are set in biome definitions.
+#### Deprecated aliases
 
 * mapgen_lava_source
-
-#### Dungeons
-
-Not required if dungeon nodes are set in biome definitions.
-
 * mapgen_cobble
-* mapgen_stair_cobble
-* mapgen_mossycobble
-* mapgen_desert_stone
-* mapgen_stair_desert_stone
-* mapgen_sandstone
-* mapgen_sandstonebrick
-* mapgen_stair_sandstone_block
+
+Use biome-defined cave liquids and dungeon nodes instead.
 
 ### Aliases needed for Mapgen V6
 
@@ -1171,6 +1160,64 @@ A box of a regular node would look like:
 
 
 
+Map terminology and coordinates
+===============================
+
+Nodes, mapblocks, mapchunks
+---------------------------
+
+A 'node' is the fundamental cubic unit of a world and appears to a player as
+roughly 1x1x1 meters in size.
+
+A 'mapblock' (often abbreviated to 'block') is 16x16x16 nodes and is the
+fundamental region of a world that is stored in the world database, sent to
+clients and handled by many parts of the engine.
+'mapblock' is preferred terminology to 'block' to help avoid confusion with
+'node', however 'block' often appears in the API.
+
+A 'mapchunk' (sometimes abbreviated to 'chunk') is usually 5x5x5 mapblocks
+(80x80x80 nodes) and is the volume of world generated in one operation by
+the map generator.
+The size in mapblocks has been chosen to optimise map generation.
+
+Coordinates
+-----------
+
+### Orientation of axes
+
+For node and mapblock coordinates, +X is East, +Y is up, +Z is North.
+
+### Node coordinates
+
+Almost all positions used in the API use node coordinates.
+
+### Mapblock coordinates
+
+Occasionally the API uses 'blockpos' which refers to mapblock coordinates that
+specify a particular mapblock.
+For example blockpos (0,0,0) specifies the mapblock that extends from
+node position (0,0,0) to node position (15,15,15).
+
+#### Converting node position to the containing blockpos
+
+To calculate the blockpos of the mapblock that contains the node at 'nodepos',
+for each axis:
+
+* blockpos = math.floor(nodepos / 16)
+
+#### Converting blockpos to min/max node positions
+
+To calculate the min/max node positions contained in the mapblock at 'blockpos',
+for each axis:
+
+* Minimum:
+  nodepos = blockpos * 16
+* Maximum:
+  nodepos = blockpos * 16 + 15
+
+
+
+
 HUD
 ===
 
@@ -1502,6 +1549,7 @@ Special groups
 * `fall_damage_add_percent`: damage speed = `speed * (1 + value/100)`
 * `bouncy`: value is bounce speed in percent
 * `falling_node`: if there is no walkable block under the node it will fall
+* `float`: the node will not fall through liquids
 * `attached_node`: if the node under it is not a walkable block the node will be
   dropped as an item. If the node is wallmounted the wallmounted direction is
   checked.
@@ -1817,9 +1865,15 @@ is used when the server receives user input. You must not use the name
 Spaces and newlines can be inserted between the blocks, as is used in the
 examples.
 
-Position and size units are inventory slots, `X` and `Y` position the formspec
-element relative to the top left of the menu or container. `W` and `H` are its
-width and height values.
+Position and size units are inventory slots unless the new coordinate system
+is enabled. `X` and `Y` position the formspec element relative to the top left
+of the menu or container. `W` and `H` are its width and height values.
+
+If the new system is enabled, all elements have unified coordinates for all
+elements with no padding or spacing in between. This is highly recommended
+for new forms. See `real_coordinates[<bool>]` and `Migrating to Real
+Coordinates`.
+
 Inventories with a `player:<name>` inventory location are only sent to the
 player named `<name>`.
 
@@ -1893,6 +1947,16 @@ Elements
 * Must be used after the `size`, `position`, and `anchor` elements (if present).
 * Disables player:set_formspec_prepend() from applying to this formspec.
 
+### `real_coordinates[<bool>]`
+
+* When set to true, all following formspec elements will use the new coordinate system.
+* If used immediately after `size`, `position`, `anchor`, and `no_prepend` elements
+  (if present), the form size will use the new coordinate system.
+* **Note**: Formspec prepends are not affected by the coordinates in the main form.
+  They must enable it explicitly.
+* For information on converting forms to the new coordinate system, see `Migrating
+  to Real Coordinates`.
+
 ### `container[<X>,<Y>]`
 
 * Start of a container block, moves all physical elements in the container by
@@ -1910,11 +1974,15 @@ Elements
 
 * Show an inventory list if it has been sent to the client. Nothing will
   be shown if the inventory list is of size 0.
+* **Note**: With the new coordinate system, the spacing between inventory
+  slots is one-fourth the size of an inventory slot.
 
 ### `list[<inventory location>;<list name>;<X>,<Y>;<W>,<H>;<starting item index>]`
 
 * Show an inventory list if it has been sent to the client. Nothing will
   be shown if the inventory list is of size 0.
+* **Note**: With the new coordinate system, the spacing between inventory
+  slots is one-fourth the size of an inventory slot.
 
 ### `listring[<inventory location>;<list name>]`
 
@@ -1976,13 +2044,26 @@ Elements
 
 ### `background[<X>,<Y>;<W>,<H>;<texture name>]`
 
-* Use a background. Inventory rectangles are not drawn then.
 * Example for formspec 8x4 in 16x resolution: image shall be sized
   8 times 16px  times  4 times 16px.
 
 ### `background[<X>,<Y>;<W>,<H>;<texture name>;<auto_clip>]`
 
-* Use a background. Inventory rectangles are not drawn then.
+* Example for formspec 8x4 in 16x resolution:
+  image shall be sized 8 times 16px  times  4 times 16px
+* If `auto_clip` is `true`, the background is clipped to the formspec size
+  (`x` and `y` are used as offset values, `w` and `h` are ignored)
+
+### `background[<X>,<Y>;<W>,<H>;<texture name>;<auto_clip>;<middle>]`
+
+* 9-sliced background. See https://en.wikipedia.org/wiki/9-slice_scaling
+* Middle is a rect which defines the middle of the 9-slice.
+	* `x` - The middle will be x pixels from all sides.
+	* `x,y` - The middle will be x pixels from the horizontal and y from the vertical.
+	* `x,y,x2,y2` - The middle will start at x,y, and end at x2, y2. Negative x2 and y2 values
+		will be added to the width and height of the texture, allowing it to be used as the
+		distance from the far end.
+	* All numbers in middle are integers.
 * Example for formspec 8x4 in 16x resolution:
   image shall be sized 8 times 16px  times  4 times 16px
 * If `auto_clip` is `true`, the background is clipped to the formspec size
@@ -1993,7 +2074,8 @@ Elements
 * Textual password style field; will be sent to server when a button is clicked
 * When enter is pressed in field, fields.key_enter_field will be sent with the
   name of this field.
-* Fields are a set height, but will be vertically centred on `H`
+* With the old coordinate system, fields are a set height, but will be vertically
+  centred on `H`. With the new coordinate system, `H` will modify the height.
 * `name` is the name of the field as returned in fields to `on_receive_fields`
 * `label`, if not blank, will be text printed on the top left above the field
 * See `field_close_on_enter` to stop enter closing the formspec
@@ -2003,7 +2085,8 @@ Elements
 * Textual field; will be sent to server when a button is clicked
 * When enter is pressed in field, `fields.key_enter_field` will be sent with
   the name of this field.
-* Fields are a set height, but will be vertically centred on `H`
+* With the old coordinate system, fields are a set height, but will be vertically
+  centred on `H`. With the new coordinate system, `H` will modify the height.
 * `name` is the name of the field as returned in fields to `on_receive_fields`
 * `label`, if not blank, will be text printed on the top left above the field
 * `default` is the default value of the field
@@ -2040,23 +2123,34 @@ Elements
 
 * The label formspec element displays the text set in `label`
   at the specified position.
+* **Note**: If the new coordinate system is enabled, labels are
+  positioned from the center of the text, not the top.
 * The text is displayed directly without automatic line breaking,
-  so label should not be used for big text chunks.
+  so label should not be used for big text chunks.  Newlines can be
+  used to make labels multiline.
+* **Note**: With the new coordinate system, newlines are spaced with
+  half a coordinate.  With the old system, newlines are spaced 2/5 of
+  an inventory slot.
 
 ### `vertlabel[<X>,<Y>;<label>]`
 
 * Textual label drawn vertically
 * `label` is the text on the label
+* **Note**: If the new coordinate system is enabled, vertlabels are
+  positioned from the center of the text, not the left.
 
 ### `button[<X>,<Y>;<W>,<H>;<name>;<label>]`
 
 * Clickable button. When clicked, fields will be sent.
-* Fixed button height. It will be vertically centred on `H`
+* With the old coordinate system, buttons are a set height, but will be vertically
+  centred on `H`. With the new coordinate system, `H` will modify the height.
 * `label` is the text on the button
 
 ### `image_button[<X>,<Y>;<W>,<H>;<texture name>;<name>;<label>]`
 
 * `texture name` is the filename of an image
+* **Note**: Height is supported on both the old and new coordinate systems
+  for image_buttons.
 
 ### `image_button[<X>,<Y>;<W>,<H>;<texture name>;<name>;<label>;<noclip>;<drawborder>;<pressed texture name>]`
 
@@ -2075,10 +2169,12 @@ Elements
 ### `button_exit[<X>,<Y>;<W>,<H>;<name>;<label>]`
 
 * When clicked, fields will be sent and the form will quit.
+* Same as `button` in all other respects.
 
 ### `image_button_exit[<X>,<Y>;<W>,<H>;<texture name>;<name>;<label>]`
 
 * When clicked, fields will be sent and the form will quit.
+* Same as `image_button` in all other respects.
 
 ### `textlist[<X>,<Y>;<W>,<H>;<name>;<listelem 1>,<listelem 2>,...,<listelem n>]`
 
@@ -2104,6 +2200,34 @@ Elements
 ### `tabheader[<X>,<Y>;<name>;<caption 1>,<caption 2>,...,<caption n>;<current_tab>;<transparent>;<draw_border>]`
 
 * Show a tab**header** at specific position (ignores formsize)
+* `X` and `Y`: position of the tabheader
+* *Note*: Width and height are automatically chosen with this syntax
+* `name` fieldname data is transferred to Lua
+* `caption 1`...: name shown on top of tab
+* `current_tab`: index of selected tab 1...
+* `transparent` (optional): show transparent
+* `draw_border` (optional): draw border
+
+### `tabheader[<X>,<Y>;<H>;<name>;<caption 1>,<caption 2>,...,<caption n>;<current_tab>;<transparent>;<draw_border>]`
+
+* Show a tab**header** at specific position (ignores formsize)
+* **Important note**: This syntax for tabheaders can only be used with the
+  new coordinate system.
+* `X` and `Y`: position of the tabheader
+* `H`: height of the tabheader. Width is automatically determined with this syntax.
+* `name` fieldname data is transferred to Lua
+* `caption 1`...: name shown on top of tab
+* `current_tab`: index of selected tab 1...
+* `transparent` (optional): show transparent
+* `draw_border` (optional): draw border
+
+### `tabheader[<X>,<Y>;<W>,<H>;<name>;<caption 1>,<caption 2>,...,<caption n>;<current_tab>;<transparent>;<draw_border>]`
+
+* Show a tab**header** at specific position (ignores formsize)
+* **Important note**: This syntax for tabheaders can only be used with the
+  new coordinate system.
+* `X` and `Y`: position of the tabheader
+* `W` and `H`: width and height of the tabheader
 * `name` fieldname data is transferred to Lua
 * `caption 1`...: name shown on top of tab
 * `current_tab`: index of selected tab 1...
@@ -2122,8 +2246,22 @@ Elements
 * **Important note**: There are two different operation modes:
     1. handle directly on change (only changed dropdown is submitted)
     2. read the value on pressing a button (all dropdown values are available)
-* `x` and `y` position of dropdown
-* Width of dropdown
+* `X` and `Y`: position of the dropdown
+* `W`: width of the dropdown. Height is automatically chosen with this syntax.
+* Fieldname data is transferred to Lua
+* Items to be shown in dropdown
+* Index of currently selected dropdown item
+
+### `dropdown[<X>,<Y>;<W>,<H>;<name>;<item 1>,<item 2>, ...,<item n>;<selected idx>]`
+
+* Show a dropdown field
+* **Important note**: This syntax for dropdowns can only be used with the
+  new coordinate system.
+* **Important note**: There are two different operation modes:
+    1. handle directly on change (only changed dropdown is submitted)
+    2. read the value on pressing a button (all dropdown values are available)
+* `X` and `Y`: position of the dropdown
+* `W` and `H`: width and height of the dropdown
 * Fieldname data is transferred to Lua
 * Items to be shown in dropdown
 * Index of currently selected dropdown item
@@ -2134,6 +2272,8 @@ Elements
 * `name` fieldname data is transferred to Lua
 * `label` to be shown left of checkbox
 * `selected` (optional): `true`/`false`
+* **Note**: If the new coordinate system is enabled, checkboxes are
+  positioned from the center of the checkbox, not the top.
 
 ### `scrollbar[<X>,<Y>;<W>,<H>;<orientation>;<name>;<value>]`
 
@@ -2209,6 +2349,41 @@ Elements
 
 **Note**: do _not_ use a element name starting with `key_`; those names are
 reserved to pass key press events to formspec!
+
+Migrating to Real Coordinates
+-----------------------------
+
+In the old system, positions included padding and spacing. Padding is a gap between
+the formspec window edges and content, and spacing is the gaps between items. For
+example, two `1x1` elements at `0,0` and `1,1` would have a spacing of `5/4` between them,
+and a padding of `3/8` from the formspec edge. It may be easiest to recreate old layouts
+in the new coordinate system from scratch.
+
+To recreate an old layout with padding, you'll need to pass the positions and sizes
+through the following formula to re-introduce padding:
+
+```
+pos = (oldpos + 1)*spacing + padding
+where
+    padding = 3/8
+    spacing = 5/4
+```
+
+You'll need to change the `size[]` tag like this:
+
+```
+size = (oldsize-1)*spacing + padding*2 + 1
+```
+
+A few elements had random offsets in the old system. Here is a table which shows these
+offsets when migrating:
+
+| Element |  Position  |  Size   | Notes
+|---------|------------|---------|-------
+| box     | +0.3, +0.1 | 0, -0.4 |
+| button  |            |         | Buttons now support height, so set h = 2 * 15/13 * 0.35, and reposition if h ~= 15/13 * 0.35 before
+| list    |            |         | Spacing is now 0.25 for both directions, meaning lists will be taller in height
+| label   | 0, +0.3    |         | The first line of text is now positioned centered exactly at the position specified
 
 
 
@@ -2340,6 +2515,8 @@ For the following functions, `v`, `v1`, `v2` are vectors,
     * Returns a boolean, `true` if the vectors are identical.
 * `vector.sort(v1, v2)`:
     * Returns in order minp, maxp vectors of the cuboid defined by `v1`, `v2`.
+* `vector.angle(v1, v2)`:
+    * Returns the angle between `v1` and `v2` in radians.
 
 For the following functions `x` can be either a vector or a number:
 
@@ -2378,6 +2555,7 @@ Helper functions
     * tolerance: number, default: `0.0`
     * If the absolute value of `x` is within the `tolerance` or `x` is NaN,
       `0` is returned.
+* `math.factorial(x)`: returns the factorial of `x`
 * `string.split(str, separator, include_empty, max_splits, sep_is_pattern)`
     * `separator`: string, default: `","`
     * `include_empty`: boolean, default: `false`
@@ -3191,10 +3369,8 @@ Methods
     * To be used only by a `VoxelManip` object from
       `minetest.get_mapgen_object`.
     * (`p1`, `p2`) is the area in which lighting is set, defaults to the whole
-      area if left out or nil.
-    * Setting `p1`, `p2` to `emin`, `emax` of the mapgen object voxelmanip (the
-      entire volume of the voxelmanip: the mapchunk plus a 1 mapblock thick
-      shell around it) will cause an error.
+      area if left out or nil. For almost all uses these should be left out
+      or nil to use the default.
     * `propagate_shadow` is an optional boolean deciding whether shadows in a
       generated mapchunk above are propagated down into the mapchunk, defaults
       to `true` if left out.
@@ -3468,11 +3644,14 @@ Utilities
           -- Chat messages are no longer predicted (0.4.16)
           no_chat_message_prediction = true,
           -- The transparency channel of textures can optionally be used on
-          -- objects (ie: players and lua entities) (5.0)
+          -- objects (ie: players and lua entities) (5.0.0)
           object_use_texture_alpha = true,
           -- Object selectionbox is settable independently from collisionbox
-          -- (5.0)
+          -- (5.0.0)
           object_independent_selectionbox = true,
+          -- Specifies whether binary data can be uploaded or downloaded using
+          -- the HTTP API (5.1.0)
+          httpfetch_binary_data = true,
       }
 
 * `minetest.has_feature(arg)`: returns `boolean, missing_features`
@@ -3659,6 +3838,7 @@ Call these functions only at load time!
     * Called after a new player has been created
 * `minetest.register_on_punchplayer(function(player, hitter, time_from_last_punch, tool_capabilities, dir, damage))`
     * Called when a player is punched
+    * Note: This callback is invoked even if the punched player is dead.
     * `player`: ObjectRef - Player that was punched
     * `hitter`: ObjectRef - Player that hit
     * `time_from_last_punch`: Meant for disallowing spamming of clicks
@@ -3678,15 +3858,16 @@ Call these functions only at load time!
                         giving a type - use this for custom damage types.
             * `punch`: Was punched. `reason.object` will hold the puncher, or nil if none.
             * `fall`
-            * `node_damage`: damage_per_second from a neighbouring node.
+            * `node_damage`: `damage_per_second` from a neighbouring node.
+                             `reason.node` will hold the node name or nil.
             * `drown`
             * `respawn`
         * Any of the above types may have additional fields from mods.
         * `reason.from` will be `mod` or `engine`.
     * `modifier`: when true, the function should return the actual `hp_change`.
-       Note: modifiers only get a temporary hp_change that can be modified by later modifiers.
-       modifiers can return true as a second argument to stop the execution of further functions.
-       Non-modifiers receive the final hp change calculated by the modifiers.
+       Note: modifiers only get a temporary `hp_change` that can be modified by later modifiers.
+       Modifiers can return true as a second argument to stop the execution of further functions.
+       Non-modifiers receive the final HP change calculated by the modifiers.
 * `minetest.register_on_dieplayer(function(ObjectRef, reason))`
     * Called when a player dies
     * `reason`: a PlayerHPChangeReason table, see register_on_player_hpchange
@@ -5322,6 +5503,11 @@ This is basically a reference to a C++ `ServerActiveObject`
     * in first person view
     * in third person view (max. values `{x=-10/10,y=-10,15,z=-5/5}`)
 * `get_eye_offset()`: returns `offset_first` and `offset_third`
+* `send_mapblock(blockpos)`:
+    * Sends a server-side loaded mapblock to the player.
+    * Returns `false` if failed.
+    * Resource intensive - use sparsely
+    * To get blockpos, integer divide pos by 16
 
 `PcgRandom`
 -----------
@@ -5620,7 +5806,7 @@ Used by `ObjectRef` methods. Part of an Entity definition.
 
         automatic_face_movement_max_rotation_per_sec = -1,
         -- Limit automatic rotation to this value in degrees per second.
-        -- No limit if value < 0.
+        -- No limit if value <= 0.
 
         backface_culling = true,
         -- Set to false to disable backface_culling for model
@@ -5980,7 +6166,11 @@ Used by `minetest.register_node`.
         place_param2 = nil,  -- Force value for param2 when player places node
 
         is_ground_content = true,
-        -- If false, the cave generator will not carve through this node
+        -- If false, the cave generator and dungeon generator will not carve
+        -- through this node.
+        -- Specifically, this stops mod-added nodes being removed by caves and
+        -- dungeons when those generate in a neighbor mapchunk and extend out
+        -- beyond the edge of that mapchunk.
 
         sunlight_propagates = false,
         -- If true, sunlight will go infinitely through this node
@@ -6071,12 +6261,15 @@ Used by `minetest.register_node`.
         legacy_wallmounted = false,
 
         waving = 0,
-        -- Valid for mesh, nodebox, plantlike, allfaces_optional nodes.
-        -- 1 - wave node like plants (top of node moves, bottom is fixed)
+        -- Valid for drawtypes:
+        -- mesh, nodebox, plantlike, allfaces_optional, liquid, flowingliquid.
+        -- 1 - wave node like plants (node top moves side-to-side, bottom is fixed)
         -- 2 - wave node like leaves (whole node moves side-to-side)
-        -- caveats: not all models will properly wave.
-        -- plantlike drawtype nodes can only wave like plants.
-        -- allfaces_optional drawtype nodes can only wave like leaves.
+        -- 3 - wave node like liquids (whole node moves up and down)
+        -- Not all models will properly wave.
+        -- plantlike drawtype can only wave like plants.
+        -- allfaces_optional drawtype can only wave like leaves.
+        -- liquid, flowingliquid drawtypes can only wave like liquids.
 
         sounds = {
             footstep = <SimpleSoundSpec>,
@@ -6084,20 +6277,48 @@ Used by `minetest.register_node`.
             dug = <SimpleSoundSpec>,
             place = <SimpleSoundSpec>,
             place_failed = <SimpleSoundSpec>,
+            fall = <SimpleSoundSpec>,
         },
 
         drop = "",
-        -- Name of dropped node when dug. Default is the node itself.
-        -- Alternatively:
+        -- Name of dropped item when dug.
+        -- Default dropped item is the node itself.
+        -- Using a table allows multiple items, drop chances and tool filtering:
         drop = {
-            -- Maximum number of items to drop
             max_items = 1,
-            -- Choose max_items randomly from this list
+            -- Maximum number of item lists to drop.
+            -- The entries in 'items' are processed in order. For each:
+            -- Tool filtering is applied, chance of drop is applied, if both are
+            -- successful the entire item list is dropped.
+            -- Entry processing continues until the number of dropped item lists
+            -- equals 'max_items'.
+            -- Therefore, entries should progress from low to high drop chance.
             items = {
+                -- Entry examples.
                 {
-                    items = {"foo:bar", "baz:frob"},  -- Items to drop
-                    rarity = 1,  -- Probability of dropping is 1 / rarity
-                    inherit_color = true, -- Inherit palette color from the node
+                    -- 1 in 1000 chance of dropping a diamond.
+                    -- Default rarity is '1'.
+                    rarity = 1000,
+                    items = {"default:diamond"},
+                },
+                {
+                    -- Only drop if using a tool whose name is identical to one
+                    -- of these.
+                    tools = {"default:shovel_mese", "default:shovel_diamond"},
+                    rarity = 5,
+                    items = {"default:dirt"},
+                    -- Whether all items in the dropped item list inherit the
+                    -- hardware coloring palette color from the dug node.
+                    -- Default is 'false'.
+                    inherit_color = true,
+                },
+                {
+                    -- Only drop if using a tool whose name contains
+                    -- "default:shovel_".
+                    tools = {"~default:shovel_"},
+                    rarity = 2,
+                    -- The item list dropped.
+                    items = {"default:sand", "default:desert_sand"},
                 },
             },
         },
@@ -6409,14 +6630,20 @@ Used by `minetest.register_biome`.
         depth_riverbed = 2,
         -- Node placed under river water and thickness of this layer
 
-        node_cave_liquid = "default:water_source",
-        -- Nodes placed as a blob of liquid in 50% of large caves.
-        -- If absent, cave liquids fall back to classic behaviour of lava or
-        -- water distributed according to a hardcoded 3D noise.
+        node_cave_liquid = "default:lava_source",
+        node_cave_liquid = {"default:water_source", "default:lava_source"},
+        -- Nodes placed inside 50% of the medium size caves.
+        -- Multiple nodes can be specified, each cave will use a randomly
+        -- chosen node from the list.
+        -- If this field is left out or 'nil', cave liquids fall back to
+        -- classic behaviour of lava and water distributed using 3D noise.
+        -- For no cave liquid, specify "air".
 
         node_dungeon = "default:cobble",
         -- Node used for primary dungeon structure.
-        -- If absent, dungeon materials fall back to classic behaviour.
+        -- If absent, dungeon nodes fall back to the 'mapgen_cobble' mapgen
+        -- alias, if that is also absent, dungeon nodes fall back to the biome
+        -- 'node_stone'.
         -- If present, the following two nodes are also used.
 
         node_dungeon_alt = "default:mossycobble",

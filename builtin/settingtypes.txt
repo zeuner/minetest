@@ -212,7 +212,7 @@ keymap_freemove (Fly key) key KEY_KEY_K
 
 #    Key for toggling pitch move mode.
 #    See http://irrlicht.sourceforge.net/docu/namespaceirr.html#a54da2a0e231901735e3da1b0edf72eb3
-keymap_pitchmove (Pitch move key) key KEY_KEY_L
+keymap_pitchmove (Pitch move key) key KEY_KEY_P
 
 #    Key for toggling fast mode.
 #    See http://irrlicht.sourceforge.net/docu/namespaceirr.html#a54da2a0e231901735e3da1b0edf72eb3
@@ -637,7 +637,7 @@ fov (Field of view) int 72 45 160
 
 #    Adjust the gamma encoding for the light tables. Higher numbers are brighter.
 #    This setting is for the client only and is ignored by the server.
-display_gamma (Gamma) float 1.0 0.5 3.0
+display_gamma (Gamma) float 1.0 0.5 10.0
 
 #    Gradient of light curve at minimum light level.
 lighting_alpha (Darkness sharpness) float 0.0 0.0 4.0
@@ -1097,7 +1097,7 @@ time_send_interval (Time send interval) int 5
 time_speed (Time speed) int 72
 
 #    Time of day when a new world is started, in millihours (0-23999).
-world_start_time (World start time) int 5250 0 23999
+world_start_time (World start time) int 6125 0 23999
 
 #    Interval of saving important changes in the world, stated in seconds.
 server_map_save_interval (Map save interval) float 5.3
@@ -1327,10 +1327,8 @@ profiler_print_interval (Engine profiling data print interval) int 0
 
 #    Name of map generator to be used when creating a new world.
 #    Creating a world in the main menu will override this.
-#    Current stable mapgens:
-#    v5, v6, v7 (except floatlands), singlenode.
-#    'stable' means the terrain shape in an existing world will not be changed
-#    in the future. Note that biomes are defined by games and may still change.
+#    Current mapgens in a highly unstable state:
+#    -    The optional floatlands of v7 (disabled by default).
 mg_name (Mapgen name) enum v7 v5,v6,v7,valleys,carpathian,fractal,flat,singlenode
 
 #    Water surface level of the world.
@@ -1418,6 +1416,9 @@ mgv5_np_cavern (Cavern noise) noise_params_3d 0, 1, (384, 128, 384), 723, 5, 0.6
 
 #    3D noise defining terrain.
 mgv5_np_ground (Ground noise) noise_params_3d 0, 40, (80, 80, 80), 983240, 4, 0.55, 2.0, eased
+
+#    3D noise that determines number of dungeons per mapchunk.
+mgv5_np_dungeons (Dungeon noise) noise_params_3d 0.9, 0.5, (500, 500, 500), 0, 2, 0.8, 2.0
 
 [*Mapgen V6]
 
@@ -1571,13 +1572,25 @@ mgv7_np_cave1 (Cave1 noise) noise_params_3d 0, 12, (61, 61, 61), 52534, 3, 0.5, 
 #    Second of two 3D noises that together define tunnels.
 mgv7_np_cave2 (Cave2 noise) noise_params_3d 0, 12, (67, 67, 67), 10325, 3, 0.5, 2.0
 
+#    3D noise that determines number of dungeons per mapchunk.
+mgv7_np_dungeons (Dungeon noise) noise_params_3d 0.9, 0.5, (500, 500, 500), 0, 2, 0.8, 2.0
+
 [*Mapgen Carpathian]
 
 #    Map generation attributes specific to Mapgen Carpathian.
-mgcarpathian_spflags (Mapgen Carpathian specific flags) flags caverns caverns,nocaverns
+mgcarpathian_spflags (Mapgen Carpathian specific flags) flags caverns,norivers caverns,nocaverns,rivers,norivers
 
 #    Defines the base ground level.
 mgcarpathian_base_level (Base ground level) float 12.0
+
+#    Defines the width of the river channel.
+mgcarpathian_river_width (River channel width) float 0.05
+
+#    Defines the depth of the river channel.
+mgcarpathian_river_depth (River channel depth) float 24.0
+
+#    Defines the width of the river valley.
+mgcarpathian_valley_width (River valley width) float 0.25
 
 #    Controls width of tunnels, a smaller value creates wider tunnels.
 mgcarpathian_cave_width (Cave width) float 0.09
@@ -1638,6 +1651,9 @@ mgcarpathian_np_ridge_mnt (Ridged mountain size noise) noise_params_2d 0, 12, (7
 #    2D noise that controls the shape/size of step mountains.
 mgcarpathian_np_step_mnt (Step mountain size noise) noise_params_2d 0, 8, (509, 509, 509), 2590, 6, 0.6, 2.0, eased
 
+#    2D noise that locates the river valleys and channels.
+mgcarpathian_np_rivers (River noise) noise_params_2d 0, 1, (1000, 1000, 1000), 85039, 5, 0.6, 2.0, eased
+
 #    3D noise for mountain overhangs, cliffs, etc. Usually small variations.
 mgcarpathian_np_mnt_var (Mountain variation noise) noise_params_3d 0, 1, (499, 499, 499), 2490, 5, 0.55, 2.0
 
@@ -1649,6 +1665,9 @@ mgcarpathian_np_cave2 (Cave2 noise) noise_params_3d 0, 12, (67, 67, 67), 10325, 
 
 #    3D noise defining giant caverns.
 mgcarpathian_np_cavern (Cavern noise) noise_params_3d 0, 1, (384, 128, 384), 723, 5, 0.63, 2.0
+
+#    3D noise that determines number of dungeons per mapchunk.
+mgcarpathian_np_dungeons (Dungeon noise) noise_params_3d 0.9, 0.5, (500, 500, 500), 0, 2, 0.8, 2.0
 
 [*Mapgen Flat]
 
@@ -1703,6 +1722,9 @@ mgflat_np_cave1 (Cave1 noise) noise_params_3d 0, 12, (61, 61, 61), 52534, 3, 0.5
 
 #    Second of two 3D noises that together define tunnels.
 mgflat_np_cave2 (Cave2 noise) noise_params_3d 0, 12, (67, 67, 67), 10325, 3, 0.5, 2.0
+
+#    3D noise that determines number of dungeons per mapchunk.
+mgflat_np_dungeons (Dungeon noise) noise_params_3d 0.9, 0.5, (500, 500, 500), 0, 2, 0.8, 2.0
 
 [*Mapgen Fractal]
 
@@ -1813,6 +1835,9 @@ mgfractal_np_cave1 (Cave1 noise) noise_params_3d 0, 12, (61, 61, 61), 52534, 3, 
 #    Second of two 3D noises that together define tunnels.
 mgfractal_np_cave2 (Cave2 noise) noise_params_3d 0, 12, (67, 67, 67), 10325, 3, 0.5, 2.0
 
+#    3D noise that determines number of dungeons per mapchunk.
+mgfractal_np_dungeons (Dungeon noise) noise_params_3d 0.9, 0.5, (500, 500, 500), 0, 2, 0.8, 2.0
+
 [*Mapgen Valleys]
 
 #    Map generation attributes specific to Mapgen Valleys.
@@ -1890,6 +1915,9 @@ mgvalleys_np_valley_profile (Valley profile) noise_params_2d 0.6, 0.5, (512, 512
 #    Slope and fill work together to modify the heights.
 mgvalleys_np_inter_valley_slope (Valley slope) noise_params_2d 0.5, 0.5, (128, 128, 128), 746, 1, 1.0, 2.0, eased
 
+#    3D noise that determines number of dungeons per mapchunk.
+mgvalleys_np_dungeons (Dungeon noise) noise_params_3d 0.9, 0.5, (500, 500, 500), 0, 2, 0.8, 2.0
+
 [*Advanced]
 
 #    Size of mapchunks generated by mapgen, stated in mapblocks (16 nodes).
@@ -1915,17 +1943,19 @@ emergequeue_limit_diskonly (Limit of emerge queues on disk) int 64
 emergequeue_limit_generate (Limit of emerge queues to generate) int 64
 
 #    Number of emerge threads to use.
-#    Empty or 0 value:
+#    WARNING: Currently there are multiple bugs that may cause crashes when
+#    'num_emerge_threads' is larger than 1. Until this warning is removed it is
+#    strongly recommended this value is set to the default '1'.
+#    Value 0:
 #    -    Automatic selection. The number of emerge threads will be
 #    -    'number of processors - 2', with a lower limit of 1.
 #    Any other value:
 #    -    Specifies the number of emerge threads, with a lower limit of 1.
-#    Warning: Increasing the number of emerge threads increases engine mapgen
+#    WARNING: Increasing the number of emerge threads increases engine mapgen
 #    speed, but this may harm game performance by interfering with other
 #    processes, especially in singleplayer and/or when running Lua code in
-#    'on_generated'.
-#    For many users the optimum setting may be '1'.
-num_emerge_threads (Number of emerge threads) int 0
+#    'on_generated'. For many users the optimum setting may be '1'.
+num_emerge_threads (Number of emerge threads) int 1
 
 [Online Content Repository]
 

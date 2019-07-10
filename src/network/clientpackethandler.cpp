@@ -408,7 +408,9 @@ void Client::handleCommand_ChatMessage(NetworkPacket *pkt)
 		return;
 	}
 
-	*pkt >> chatMessage->sender >> chatMessage->message >> chatMessage->timestamp;
+	u64 timestamp;
+	*pkt >> chatMessage->sender >> chatMessage->message >> timestamp;
+	chatMessage->timestamp = static_cast<std::time_t>(timestamp);
 
 	chatMessage->type = (ChatMessageType) message_type;
 
@@ -895,8 +897,10 @@ void Client::handleCommand_DetachedInventory(NetworkPacket* pkt)
 		inv = inv_it->second;
 	}
 
-	std::string contents;
-	*pkt >> contents;
+	u16 ignore;
+	*pkt >> ignore; // this used to be the length of the following string, ignore it
+
+	std::string contents = pkt->getRemainingString();
 	std::istringstream is(contents, std::ios::binary);
 	inv->deSerialize(is);
 }

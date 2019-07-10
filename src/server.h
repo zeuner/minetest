@@ -296,8 +296,8 @@ public:
 	bool hudChange(RemotePlayer *player, u32 id, HudElementStat stat, void *value);
 	bool hudSetFlags(RemotePlayer *player, u32 flags, u32 mask);
 	bool hudSetHotbarItemcount(RemotePlayer *player, s32 hotbar_itemcount);
-	void hudSetHotbarImage(RemotePlayer *player, std::string name);
-	void hudSetHotbarSelectedImage(RemotePlayer *player, std::string name);
+	void hudSetHotbarImage(RemotePlayer *player, const std::string &name);
+	void hudSetHotbarSelectedImage(RemotePlayer *player, const std::string &name);
 
 	Address getPeerAddress(session_t peer_id);
 
@@ -343,6 +343,9 @@ public:
 	bool leaveModChannel(const std::string &channel);
 	bool sendModChannelMessage(const std::string &channel, const std::string &message);
 	ModChannel *getModChannel(const std::string &channel);
+
+	// Send block to specific player only
+	bool SendBlock(session_t peer_id, const v3s16 &blockpos);
 
 	// Bind address
 	Address m_bind_addr;
@@ -477,7 +480,7 @@ private:
 	void RespawnPlayer(session_t peer_id);
 	void DeleteClient(session_t peer_id, ClientDeletionReason reason);
 	void UpdateCrafting(RemotePlayer *player);
-	bool checkInteractDistance(RemotePlayer *player, const f32 d, const std::string what);
+	bool checkInteractDistance(RemotePlayer *player, const f32 d, const std::string &what);
 
 	void handleChatInterfaceEvent(ChatEvent *evt);
 

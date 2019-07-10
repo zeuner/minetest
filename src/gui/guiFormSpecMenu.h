@@ -99,12 +99,14 @@ class GUIFormSpecMenu : public GUIModalMenu
 
 		ListDrawSpec(const InventoryLocation &a_inventoryloc,
 				const std::string &a_listname,
-				v2s32 a_pos, v2s32 a_geom, s32 a_start_item_i):
+				v2s32 a_pos, v2s32 a_geom, s32 a_start_item_i,
+				bool a_real_coordinates):
 			inventoryloc(a_inventoryloc),
 			listname(a_listname),
 			pos(a_pos),
 			geom(a_geom),
-			start_item_i(a_start_item_i)
+			start_item_i(a_start_item_i),
+			real_coordinates(a_real_coordinates)
 		{
 		}
 
@@ -113,6 +115,7 @@ class GUIFormSpecMenu : public GUIModalMenu
 		v2s32 pos;
 		v2s32 geom;
 		s32 start_item_i;
+		bool real_coordinates;
 	};
 
 	struct ListRingSpec
@@ -177,6 +180,18 @@ class GUIFormSpecMenu : public GUIModalMenu
 		}
 
 		ImageDrawSpec(const std::string &a_name,
+				const v2s32 &a_pos, const v2s32 &a_geom, const core::rect<s32> &middle, bool clip=false):
+				name(a_name),
+				parent_button(NULL),
+				pos(a_pos),
+				geom(a_geom),
+				middle(middle),
+				scale(true),
+				clip(clip)
+		{
+		}
+
+		ImageDrawSpec(const std::string &a_name,
 				const v2s32 &a_pos):
 			name(a_name),
 			parent_button(NULL),
@@ -191,6 +206,7 @@ class GUIFormSpecMenu : public GUIModalMenu
 		gui::IGUIButton *parent_button;
 		v2s32 pos;
 		v2s32 geom;
+		core::rect<s32> middle;
 		bool scale;
 		bool clip;
 	};
@@ -287,7 +303,7 @@ public:
 			ISimpleTextureSource *tsrc,
 			IFormSource* fs_src,
 			TextDest* txt_dst,
-			std::string formspecPrepend,
+			const std::string &formspecPrepend,
 			bool remap_dbl_click = true);
 
 	~GUIFormSpecMenu();
@@ -302,6 +318,11 @@ public:
 		m_formspec_string = formspec_string;
 		m_current_inventory_location = current_inventory_location;
 		regenerateGui(m_screensize_old);
+	}
+
+	const InventoryLocation &getFormspecLocation()
+	{
+		return m_current_inventory_location;
 	}
 
 	void setFormspecPrepend(const std::string &formspecPrepend)
@@ -376,6 +397,9 @@ protected:
 	std::string getNameByID(s32 id);
 	v2s32 getElementBasePos(bool absolute,
 			const std::vector<std::string> *v_pos);
+	v2s32 getRealCoordinateBasePos(bool absolute,
+			const std::vector<std::string> &v_pos);
+	v2s32 getRealCoordinateGeometry(const std::vector<std::string> &v_geom);
 
 	v2s32 padding;
 	v2f32 spacing;
@@ -445,6 +469,7 @@ private:
 
 	typedef struct {
 		bool explicit_size;
+		bool real_coordinates;
 		v2f invsize;
 		v2s32 size;
 		v2f32 offset;

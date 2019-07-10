@@ -51,6 +51,7 @@ struct MapgenFractalParams : public MapgenParams
 	NoiseParams np_filler_depth;
 	NoiseParams np_cave1;
 	NoiseParams np_cave2;
+	NoiseParams np_dungeons;
 
 	MapgenFractalParams();
 	~MapgenFractalParams() = default;
@@ -62,7 +63,7 @@ struct MapgenFractalParams : public MapgenParams
 class MapgenFractal : public MapgenBasic
 {
 public:
-	MapgenFractal(int mapgenid, MapgenFractalParams *params, EmergeManager *emerge);
+	MapgenFractal(MapgenFractalParams *params, EmergeManager *emerge);
 	~MapgenFractal();
 
 	virtual MapgenType getType() const { return MAPGEN_FRACTAL; }

@@ -798,6 +798,8 @@ void ContentFeatures::updateTextures(ITextureSource *tsrc, IShaderSource *shdsrc
 			material_type = TILE_MATERIAL_WAVING_PLANTS;
 		else if (waving == 2)
 			material_type = TILE_MATERIAL_WAVING_LEAVES;
+		else if (waving == 3)
+			material_type = TILE_MATERIAL_WAVING_LIQUID_BASIC;
 		break;
 	case NDT_TORCHLIKE:
 	case NDT_SIGNLIKE:
@@ -815,8 +817,14 @@ void ContentFeatures::updateTextures(ITextureSource *tsrc, IShaderSource *shdsrc
 		correctAlpha(tdef, 6);
 		correctAlpha(tdef_overlay, 6);
 		correctAlpha(tdef_spec, CF_SPECIAL_COUNT);
-		material_type = (alpha == 255) ?
-			TILE_MATERIAL_LIQUID_OPAQUE : TILE_MATERIAL_LIQUID_TRANSPARENT;
+
+		if (waving == 3) {
+			material_type = (alpha == 255) ? TILE_MATERIAL_WAVING_LIQUID_OPAQUE :
+				TILE_MATERIAL_WAVING_LIQUID_TRANSPARENT;
+		} else {
+			material_type = (alpha == 255) ? TILE_MATERIAL_LIQUID_OPAQUE :
+				TILE_MATERIAL_LIQUID_TRANSPARENT;
+		}
 	}
 
 	u32 tile_shader = shdsrc->getShader("nodes_shader", material_type, drawtype);
@@ -1292,8 +1300,11 @@ void NodeDefManager::applyTextureOverrides(const std::string &override_filepath)
 	int line_c = 0;
 	while (std::getline(infile, line)) {
 		line_c++;
-		if (trim(line).empty())
+		// Also trim '\r' on DOS-style files
+		line = trim(line);
+		if (line.empty())
 			continue;
+
 		std::vector<std::string> splitted = str_split(line, ' ');
 		if (splitted.size() != 3) {
 			errorstream << override_filepath

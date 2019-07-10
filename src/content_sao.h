@@ -45,6 +45,8 @@ public:
 
 	inline bool isAttached() const
 	{ return getParent(); }
+	inline bool isImmortal() const
+	{ return itemgroup_get(m_armor_groups, "immortal"); }
 
 	void setArmorGroups(const ItemGroupList &armor_groups);
 	const ItemGroupList &getArmorGroups();
@@ -401,9 +403,18 @@ struct PlayerHPChangeReason {
 	};
 
 	Type type = SET_HP;
-	ServerActiveObject *object;
 	bool from_mod = false;
 	int lua_reference = -1;
+
+	// For PLAYER_PUNCH
+	ServerActiveObject *object = nullptr;
+	// For NODE_DAMAGE
+	std::string node;
+
+	inline bool hasLuaReference() const
+	{
+		return lua_reference >= 0;
+	}
 
 	bool setTypeFromString(const std::string &typestr)
 	{
@@ -445,7 +456,15 @@ struct PlayerHPChangeReason {
 		}
 	}
 
-	PlayerHPChangeReason(Type type, ServerActiveObject *object=NULL):
+	PlayerHPChangeReason(Type type):
+			type(type)
+	{}
+
+	PlayerHPChangeReason(Type type, ServerActiveObject *object):
 			type(type), object(object)
+	{}
+
+	PlayerHPChangeReason(Type type, std::string node):
+			type(type), node(node)
 	{}
 };

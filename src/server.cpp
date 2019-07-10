@@ -220,6 +220,7 @@ Server::Server(
 	m_itemdef(createItemDefManager()),
 	m_nodedef(createNodeDefManager()),
 	m_craftdef(createCraftDefManager()),
+	m_thread(new ServerThread(this)),
 	m_uptime(0),
 	m_clients(m_con),
 	m_admin_chat(iface),
@@ -320,9 +321,6 @@ void Server::init()
 	// Create world if it doesn't exist
 	if (!loadGameConfAndInitWorld(m_path_world, m_gamespec))
 		throw ServerError("Failed to initialize world");
-
-	// Create server thread
-	m_thread = new ServerThread(this);
 
 	// Create emerge manager
 	m_emerge = new EmergeManager(this);
@@ -1428,7 +1426,7 @@ void Server::SendMovement(session_t peer_id)
 
 void Server::SendPlayerHPOrDie(PlayerSAO *playersao, const PlayerHPChangeReason &reason)
 {
-	if (!g_settings->getBool("enable_damage"))
+	if (playersao->isImmortal())
 		return;
 
 	session_t peer_id   = playersao->getPeerID();
@@ -1559,7 +1557,7 @@ void Server::SendChatMessage(session_t peer_id, const ChatMessage &message)
 	NetworkPacket pkt(TOCLIENT_CHAT_MESSAGE, 0, peer_id);
 	u8 version = 1;
 	u8 type = message.type;
-	pkt << version << type << std::wstring(L"") << message.message << message.timestamp;
+	pkt << version << type << std::wstring(L"") << message.message << (u64)message.timestamp;
 
 	if (peer_id != PEER_ID_INEXISTENT) {
 		RemotePlayer *player = m_env->getPlayer(peer_id);
@@ -2315,6 +2313,28 @@ void Server::SendBlocks(float dtime)
 	m_clients.unlock();
 }
 
+bool Server::SendBlock(session_t peer_id, const v3s16 &blockpos)
+{
+	MapBlock *block = nullptr;
+	try {
+		block = m_env->getMap().getBlockNoCreate(blockpos);
+	} catch (InvalidPositionException &e) {};
+	if (!block)
+		return false;
+
+	m_clients.lock();
+	RemoteClient *client = m_clients.lockedGetClientNoEx(peer_id, CS_Active);
+	if (!client || client->isBlockSent(blockpos)) {
+		m_clients.unlock();
+		return false;
+	}
+	SendBlockNoLock(peer_id, block, client->serialization_version,
+			client->net_proto_version);
+	m_clients.unlock();
+
+	return true;
+}
+
 void Server::fillMediaCache()
 {
 	infostream<<"Server: Calculating media file checksums"<<std::endl;
@@ -2577,7 +2597,10 @@ void Server::sendDetachedInventory(const std::string &name, session_t peer_id)
 		// Serialization & NetworkPacket isn't a love story
 		std::ostringstream os(std::ios_base::binary);
 		inv_it->second->serialize(os);
-		pkt << os.str();
+
+		std::string os_str = os.str();
+		pkt << static_cast<u16>(os_str.size()); // HACK: to keep compatibility with 5.0.0 clients
+		pkt.putRawString(os_str);
 	}
 
 	if (peer_id == PEER_ID_INEXISTENT)
@@ -2872,8 +2895,13 @@ std::wstring Server::handleChat(const std::string &name, const std::wstring &wna
 				L"It was refused. Send a shorter message";
 	}
 
+	auto message = trim(wide_to_utf8(wmessage));
+	if (message.find_first_of("\n\r") != std::wstring::npos) {
+		return L"New lines are not permitted in chat messages";
+	}
+
 	// Run script hook, exit if script ate the chat message
-	if (m_script->on_chat_message(name, wide_to_utf8(wmessage)))
+	if (m_script->on_chat_message(name, message))
 		return L"";
 
 	// Line to send
@@ -3180,7 +3208,7 @@ bool Server::hudSetHotbarItemcount(RemotePlayer *player, s32 hotbar_itemcount)
 	return true;
 }
 
-void Server::hudSetHotbarImage(RemotePlayer *player, std::string name)
+void Server::hudSetHotbarImage(RemotePlayer *player, const std::string &name)
 {
 	if (!player)
 		return;
@@ -3189,7 +3217,7 @@ void Server::hudSetHotbarImage(RemotePlayer *player, std::string name)
 	SendHUDSetParam(player->getPeerId(), HUD_PARAM_HOTBAR_IMAGE, name);
 }
 
-void Server::hudSetHotbarSelectedImage(RemotePlayer *player, std::string name)
+void Server::hudSetHotbarSelectedImage(RemotePlayer *player, const std::string &name)
 {
 	if (!player)
 		return;

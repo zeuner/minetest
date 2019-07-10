@@ -225,8 +225,8 @@ public:
 
 	void updateTexturePos();
 
-	// std::string copy is mandatory as mod can be a class member and there is a swap
-	// on those class members... do NOT pass by reference
+	// ffs this HAS TO BE a string copy! See #5739 if you think otherwise
+	// Reason: updateTextures(m_previous_texture_modifier);
 	void updateTextures(std::string mod);
 
 	void updateAnimation();

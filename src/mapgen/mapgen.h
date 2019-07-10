@@ -208,8 +208,8 @@ public:
 	// Mapgen management functions
 	static MapgenType getMapgenType(const std::string &mgname);
 	static const char *getMapgenName(MapgenType mgtype);
-	static Mapgen *createMapgen(MapgenType mgtype, int mgid,
-		MapgenParams *params, EmergeManager *emerge);
+	static Mapgen *createMapgen(MapgenType mgtype, MapgenParams *params,
+		EmergeManager *emerge);
 	static MapgenParams *createMapgenParams(MapgenType mgtype);
 	static void getMapgenNames(std::vector<const char *> *mgnames, bool include_hidden);
 
@@ -257,21 +257,11 @@ protected:
 	v3s16 full_node_min;
 	v3s16 full_node_max;
 
-	// Content required for generateBiomes
 	content_t c_stone;
-	content_t c_desert_stone;
-	content_t c_sandstone;
 	content_t c_water_source;
 	content_t c_river_water_source;
 	content_t c_lava_source;
-
-	// Content required for generateDungeons
 	content_t c_cobble;
-	content_t c_stair_cobble;
-	content_t c_mossycobble;
-	content_t c_stair_desert_stone;
-	content_t c_sandstonebrick;
-	content_t c_stair_sandstone_block;
 
 	int ystride;
 	int zstride;
@@ -283,6 +273,7 @@ protected:
 	NoiseParams np_cave1;
 	NoiseParams np_cave2;
 	NoiseParams np_cavern;
+	NoiseParams np_dungeons;
 	float cave_width;
 	float cavern_limit;
 	float cavern_taper;

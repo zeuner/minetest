@@ -257,17 +257,8 @@ ItemStack ItemStack::addItem(ItemStack newitem, IItemDefManager *itemdef)
 	// If this is an empty item, it's an easy job.
 	else if(empty())
 	{
-		const u16 stackMax = newitem.getStackMax(itemdef);
-
 		*this = newitem;
-
-		// If the item fits fully, delete it
-		if (count <= stackMax) {
-			newitem.clear();
-		} else { // Else the item does not fit fully. Return the rest.
-			count = stackMax;
-			newitem.remove(count);
-		}
+		newitem.clear();
 	}
 	// If item name or metadata differs, bail out
 	else if (name != newitem.name
@@ -306,14 +297,7 @@ bool ItemStack::itemFits(ItemStack newitem,
 	// If this is an empty item, it's an easy job.
 	else if(empty())
 	{
-		const u16 stackMax = newitem.getStackMax(itemdef);
-
-		// If the item fits fully, delete it
-		if (newitem.count <= stackMax) {
-			newitem.clear();
-		} else { // Else the item does not fit fully. Return the rest.
-			newitem.remove(stackMax);
-		}
+		newitem.clear();
 	}
 	// If item name or metadata differs, bail out
 	else if (name != newitem.name
@@ -335,6 +319,7 @@ bool ItemStack::itemFits(ItemStack newitem,
 
 	if(restitem)
 		*restitem = newitem;
+
 	return newitem.empty();
 }
 
@@ -508,14 +493,9 @@ bool InventoryList::operator == (const InventoryList &other) const
 		return false;
 	if(m_name != other.m_name)
 		return false;
-	for(u32 i=0; i<m_items.size(); i++)
-	{
-		ItemStack s1 = m_items[i];
-		ItemStack s2 = other.m_items[i];
-		if(s1.name != s2.name || s1.wear!= s2.wear || s1.count != s2.count ||
-				s1.metadata != s2.metadata)
+	for (u32 i = 0; i < m_items.size(); i++)
+		if (m_items[i] != other.m_items[i])
 			return false;
-	}
 
 	return true;
 }
