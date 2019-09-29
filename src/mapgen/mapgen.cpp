@@ -39,6 +39,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "serialization.h"
 #include "util/serialize.h"
 #include "util/numeric.h"
+#include "util/directiontables.h"
 #include "filesys.h"
 #include "log.h"
 #include "mapgen_carpathian.h"
@@ -81,15 +82,21 @@ struct MapgenDesc {
 //// Built-in mapgens
 ////
 
+// Order used here defines the order of appearence in mainmenu.
+// v6 always last to discourage selection.
+// Special mapgens flat, fractal, singlenode, next to last. Of these, singlenode
+// last to discourage selection.
+// Of the remaining, v5 last due to age, v7 first due to being the default.
+// The order of 'enum MapgenType' in mapgen.h must match this order.
 static MapgenDesc g_reg_mapgens[] = {
-	{"v5",         true},
-	{"v6",         true},
 	{"v7",         true},
+	{"valleys",    true},
+	{"carpathian", true},
+	{"v5",         true},
 	{"flat",       true},
 	{"fractal",    true},
-	{"valleys",    true},
 	{"singlenode", true},
-	{"carpathian", true},
+	{"v6",         true},
 };
 
 STATIC_ASSERT(
@@ -416,7 +423,7 @@ void Mapgen::updateLiquid(UniqueQueue<v3s16> *trans_liquid, v3s16 nmin, v3s16 nm
 
 void Mapgen::setLighting(u8 light, v3s16 nmin, v3s16 nmax)
 {
-	ScopeProfiler sp(g_profiler, "EmergeThread: mapgen lighting update", SPT_AVG);
+	ScopeProfiler sp(g_profiler, "EmergeThread: update lighting", SPT_AVG);
 	VoxelArea a(nmin, nmax);
 
 	for (int z = a.MinEdge.Z; z <= a.MaxEdge.Z; z++) {
@@ -429,7 +436,8 @@ void Mapgen::setLighting(u8 light, v3s16 nmin, v3s16 nmax)
 }
 
 
-void Mapgen::lightSpread(VoxelArea &a, v3s16 p, u8 light)
+void Mapgen::lightSpread(VoxelArea &a, std::queue<std::pair<v3s16, u8>> &queue,
+	const v3s16 &p, u8 light)
 {
 	if (light <= 1 || !a.contains(p))
 		return;
@@ -449,8 +457,8 @@ void Mapgen::lightSpread(VoxelArea &a, v3s16 p, u8 light)
 	// Bail out only if we have no more light from either bank to propogate, or
 	// we hit a solid block that light cannot pass through.
 	if ((light_day  <= (n.param1 & 0x0F) &&
-		light_night <= (n.param1 & 0xF0)) ||
-		!ndef->get(n).light_propagates)
+			light_night <= (n.param1 & 0xF0)) ||
+			!ndef->get(n).light_propagates)
 		return;
 
 	// Since this recursive function only terminates when there is no light from
@@ -461,19 +469,15 @@ void Mapgen::lightSpread(VoxelArea &a, v3s16 p, u8 light)
 
 	n.param1 = light;
 
-	lightSpread(a, p + v3s16(0, 0, 1), light);
-	lightSpread(a, p + v3s16(0, 1, 0), light);
-	lightSpread(a, p + v3s16(1, 0, 0), light);
-	lightSpread(a, p - v3s16(0, 0, 1), light);
-	lightSpread(a, p - v3s16(0, 1, 0), light);
-	lightSpread(a, p - v3s16(1, 0, 0), light);
+	// add to queue
+	queue.emplace(p, light);
 }
 
 
 void Mapgen::calcLighting(v3s16 nmin, v3s16 nmax, v3s16 full_nmin, v3s16 full_nmax,
 	bool propagate_shadow)
 {
-	ScopeProfiler sp(g_profiler, "EmergeThread: mapgen lighting update", SPT_AVG);
+	ScopeProfiler sp(g_profiler, "EmergeThread: update lighting", SPT_AVG);
 	//TimeTaker t("updateLighting");
 
 	propagateSunlight(nmin, nmax, propagate_shadow);
@@ -519,9 +523,10 @@ void Mapgen::propagateSunlight(v3s16 nmin, v3s16 nmax, bool propagate_shadow)
 }
 
 
-void Mapgen::spreadLight(v3s16 nmin, v3s16 nmax)
+void Mapgen::spreadLight(const v3s16 &nmin, const v3s16 &nmax)
 {
 	//TimeTaker t("spreadLight");
+	std::queue<std::pair<v3s16, u8>> queue;
 	VoxelArea a(nmin, nmax);
 
 	for (int z = a.MinEdge.Z; z <= a.MaxEdge.Z; z++) {
@@ -545,18 +550,24 @@ void Mapgen::spreadLight(v3s16 nmin, v3s16 nmax)
 
 				u8 light = n.param1;
 				if (light) {
-					lightSpread(a, v3s16(x,     y,     z + 1), light);
-					lightSpread(a, v3s16(x,     y + 1, z    ), light);
-					lightSpread(a, v3s16(x + 1, y,     z    ), light);
-					lightSpread(a, v3s16(x,     y,     z - 1), light);
-					lightSpread(a, v3s16(x,     y - 1, z    ), light);
-					lightSpread(a, v3s16(x - 1, y,     z    ), light);
+					const v3s16 p(x, y, z);
+					// spread to all 6 neighbor nodes
+					for (const auto &dir : g_6dirs)
+						lightSpread(a, queue, p + dir, light);
 				}
 			}
 		}
 	}
 
-	//printf("spreadLight: %dms\n", t.stop());
+	while (!queue.empty()) {
+		const auto &i = queue.front();
+		// spread to all 6 neighbor nodes
+		for (const auto &dir : g_6dirs)
+			lightSpread(a, queue, i.first + dir, i.second);
+		queue.pop();
+	}
+
+	//printf("spreadLight: %lums\n", t.stop());
 }
 
 
@@ -870,29 +881,33 @@ void MapgenBasic::generateDungeons(s16 max_stone_y)
 	if (num_dungeons == 0)
 		return;
 
-	// Get biome at mapchunk midpoint
-	v3s16 chunk_mid = node_min + (node_max - node_min) / v3s16(2, 2, 2);
-	Biome *biome = (Biome *)biomegen->getBiomeAtPoint(chunk_mid);
+	PseudoRandom ps(blockseed + 70033);
 
 	DungeonParams dp;
 
-	dp.seed             = seed;
-	dp.only_in_ground   = true;
-	dp.corridor_len_min = 1;
-	dp.corridor_len_max = 13;
-	dp.rooms_min        = 2;
-	dp.rooms_max        = 16;
-
-	dp.np_alt_wall = 
+	dp.np_alt_wall =
 		NoiseParams(-0.4, 1.0, v3f(40.0, 40.0, 40.0), 32474, 6, 1.1, 2.0);
 
-	dp.diagonal_dirs       = false;
-	dp.holesize            = v3s16(2, 3, 2);
-	dp.room_size_min       = v3s16(6, 5, 6);
-	dp.room_size_max       = v3s16(10, 6, 10);
-	dp.room_size_large_min = v3s16(10, 8, 10);
-	dp.room_size_large_max = v3s16(18, 16, 18);
+	dp.seed                = seed;
+	dp.only_in_ground      = true;
+	dp.num_dungeons        = num_dungeons;
 	dp.notifytype          = GENNOTIFY_DUNGEON;
+	dp.num_rooms           = ps.range(2, 16);
+	dp.room_size_min       = v3s16(5, 5, 5);
+	dp.room_size_max       = v3s16(12, 6, 12);
+	dp.room_size_large_min = v3s16(12, 6, 12);
+	dp.room_size_large_max = v3s16(16, 16, 16);
+	dp.large_room_chance   = (ps.range(1, 4) == 1) ? 8 : 0;
+	dp.diagonal_dirs       = ps.range(1, 8) == 1;
+	// Diagonal corridors must have 'hole' width >=2 to be passable
+	u8 holewidth           = (dp.diagonal_dirs) ? 2 : ps.range(1, 2);
+	dp.holesize            = v3s16(holewidth, 3, holewidth);
+	dp.corridor_len_min    = 1;
+	dp.corridor_len_max    = 13;
+
+	// Get biome at mapchunk midpoint
+	v3s16 chunk_mid = node_min + (node_max - node_min) / v3s16(2, 2, 2);
+	Biome *biome = (Biome *)biomegen->getBiomeAtPoint(chunk_mid);
 
 	// Use biome-defined dungeon nodes if defined
 	if (biome->c_dungeon != CONTENT_IGNORE) {
@@ -917,7 +932,7 @@ void MapgenBasic::generateDungeons(s16 max_stone_y)
 	}
 
 	DungeonGen dgen(ndef, &gennotify, &dp);
-	dgen.generate(vm, blockseed, full_node_min, full_node_max, num_dungeons);
+	dgen.generate(vm, blockseed, full_node_min, full_node_max);
 }
 
 

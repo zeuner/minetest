@@ -102,15 +102,16 @@ private:
 	std::list<GenNotifyEvent> m_notify_events;
 };
 
+// Order must match the order of 'static MapgenDesc g_reg_mapgens[]' in mapgen.cpp
 enum MapgenType {
-	MAPGEN_V5,
-	MAPGEN_V6,
 	MAPGEN_V7,
+	MAPGEN_VALLEYS,
+	MAPGEN_CARPATHIAN,
+	MAPGEN_V5,
 	MAPGEN_FLAT,
 	MAPGEN_FRACTAL,
-	MAPGEN_VALLEYS,
 	MAPGEN_SINGLENODE,
-	MAPGEN_CARPATHIAN,
+	MAPGEN_V6,
 	MAPGEN_INVALID,
 };
 
@@ -189,11 +190,12 @@ public:
 	void updateLiquid(UniqueQueue<v3s16> *trans_liquid, v3s16 nmin, v3s16 nmax);
 
 	void setLighting(u8 light, v3s16 nmin, v3s16 nmax);
-	void lightSpread(VoxelArea &a, v3s16 p, u8 light);
+	void lightSpread(VoxelArea &a, std::queue<std::pair<v3s16, u8>> &queue,
+		const v3s16 &p, u8 light);
 	void calcLighting(v3s16 nmin, v3s16 nmax, v3s16 full_nmin, v3s16 full_nmax,
 		bool propagate_shadow = true);
 	void propagateSunlight(v3s16 nmin, v3s16 nmax, bool propagate_shadow);
-	void spreadLight(v3s16 nmin, v3s16 nmax);
+	void spreadLight(const v3s16 &nmin, const v3s16 &nmax);
 
 	virtual void makeChunk(BlockMakeData *data) {}
 	virtual int getGroundLevelAtPoint(v2s16 p) { return 0; }
@@ -278,5 +280,7 @@ protected:
 	float cavern_limit;
 	float cavern_taper;
 	float cavern_threshold;
+	// TODO 'lava_depth' is deprecated and should be removed. Cave liquids are
+	// now defined and located using biome definitions.
 	int lava_depth;
 };
