@@ -3,6 +3,7 @@ Minetest Lua Modding API Reference
 
 * More information at <http://www.minetest.net/>
 * Developer Wiki: <http://dev.minetest.net/>
+* (Unofficial) Minetest Modding Book by rubenwardy: <https://rubenwardy.com/minetest_modding_book/>
 
 Introduction
 ------------
@@ -153,7 +154,7 @@ The location of this directory can be fetched by using
 
 ### mod.conf
 
-A key-value store of mod details.
+A `Settings` file that provides meta information about the mod.
 
 * `name`: The mod name. Allows Minetest to determine the mod name even if the
           folder is wrongly named.
@@ -195,8 +196,9 @@ A file containing a description to be shown in the Mods tab of the main menu.
 
 ### `settingtypes.txt`
 
-A file in the same format as the one in builtin. It will be parsed by the
-settings menu and the settings will be displayed in the "Mods" category.
+The format is documented in `builtin/settingtypes.txt`.
+It is parsed by the main menu settings dialogue to list mod-specific
+settings in the "Mods" category.
 
 ### `init.lua`
 
@@ -286,7 +288,9 @@ of the game's nodes are to be used for core mapgen generation. For example:
 
     minetest.register_alias("mapgen_stone", "default:stone")
 
-### Aliases needed for all mapgens except Mapgen V6
+### Aliases for non-V6 mapgens
+
+#### Essential aliases
 
 * mapgen_stone
 * mapgen_water_source
@@ -296,16 +300,19 @@ of the game's nodes are to be used for core mapgen generation. For example:
 it is necessary to have a river liquid node with a short `liquid_range` and
 `liquid_renewable = false` to avoid flooding.
 
-#### Deprecated aliases
+#### Optional aliases
 
 * mapgen_lava_source
+
+Fallback lava node used if cave liquids are not defined in biome definitions.
+Deprecated for non-V6 mapgens, define cave liquids in biome definitions instead.
+
 * mapgen_cobble
 
-Use biome-defined cave liquids and dungeon nodes instead.
+Fallback node used if dungeon nodes are not defined in biome definitions.
+Deprecated for non-V6 mapgens, define dungeon nodes in biome definitions instead.
 
 ### Aliases needed for Mapgen V6
-
-#### Terrain and biomes
 
 * mapgen_stone
 * mapgen_water_source
@@ -321,8 +328,6 @@ Use biome-defined cave liquids and dungeon nodes instead.
 * mapgen_snow
 * mapgen_ice
 
-#### Flora
-
 * mapgen_tree
 * mapgen_leaves
 * mapgen_apple
@@ -331,8 +336,6 @@ Use biome-defined cave liquids and dungeon nodes instead.
 * mapgen_junglegrass
 * mapgen_pine_tree
 * mapgen_pine_needles
-
-#### Dungeons
 
 * mapgen_cobble
 * mapgen_stair_cobble
@@ -854,6 +857,15 @@ A positional sound will only be heard by players that are within
 * e.g. `{name = "default_place_node", gain = 1.0, pitch = 1.0}`
 
 
+Special sound files
+-------------------
+
+These sound files are played back by the engine if provided.
+
+ * `main_menu`: Looped sound in the main menu (gain = 1.0)
+ * `player_damage`: Played when the local player takes damage (gain = 0.5)
+ * `player_falling_damage`: Played when the local player takes
+   damage by falling (gain = 0.5)
 
 
 Registered definitions
@@ -1323,6 +1335,9 @@ For helper functions see [Spatial Vectors].
 
 * `{type="nothing"}`
 * `{type="node", under=pos, above=pos}`
+    * Indicates a pointed node selection box.
+    * `under` refers to the node position behind the pointed face.
+    * `above` refers to the node position in front of the pointed face.
 * `{type="object", ref=ObjectRef}`
 
 Exact pointing location (currently only `Raycast` supports these fields):
@@ -1532,33 +1547,58 @@ Another example: Make red wool from white wool and red dye:
 Special groups
 --------------
 
-* `immortal`: Disables the group damage system for an entity
-* `punch_operable`: For entities; disables the regular damage mechanism for
-  players punching it by hand or a non-tool item, so that it can do something
-  else than take damage.
+The asterisk `(*)` after a group name describes that there is no engine
+functionality bound to it, and implementation is left up as a suggestion
+to games.
+
+### Node, item and tool groups
+
+* `not_in_creative_inventory`: (*) Special group for inventory mods to indicate
+  that the item should be hidden in item lists.
+
+
+### Node-only groups
+
+* `attached_node`: if the node under it is not a walkable block the node will be
+  dropped as an item. If the node is wallmounted the wallmounted direction is
+  checked.
+* `bouncy`: value is bounce speed in percent
+* `connect_to_raillike`: makes nodes of raillike drawtype with same group value
+  connect to each other
+* `dig_immediate`: Player can always pick up node without reducing tool wear
+    * `2`: the node always gets the digging time 0.5 seconds (rail, sign)
+    * `3`: the node always gets the digging time 0 seconds (torch)
+* `disable_jump`: Player (and possibly other things) cannot jump from node
+* `fall_damage_add_percent`: damage speed = `speed * (1 + value/100)`
+* `falling_node`: if there is no walkable block under the node it will fall
+* `float`: the node will not fall through liquids
 * `level`: Can be used to give an additional sense of progression in the game.
      * A larger level will cause e.g. a weapon of a lower level make much less
        damage, and get worn out much faster, or not be able to get drops
        from destroyed nodes.
      * `0` is something that is directly accessible at the start of gameplay
      * There is no upper limit
-* `dig_immediate`: Player can always pick up node without reducing tool wear
-    * `2`: the node always gets the digging time 0.5 seconds (rail, sign)
-    * `3`: the node always gets the digging time 0 seconds (torch)
-* `disable_jump`: Player (and possibly other things) cannot jump from node
-* `fall_damage_add_percent`: damage speed = `speed * (1 + value/100)`
-* `bouncy`: value is bounce speed in percent
-* `falling_node`: if there is no walkable block under the node it will fall
-* `float`: the node will not fall through liquids
-* `attached_node`: if the node under it is not a walkable block the node will be
-  dropped as an item. If the node is wallmounted the wallmounted direction is
-  checked.
-* `connect_to_raillike`: makes nodes of raillike drawtype with same group value
-  connect to each other
+     * See also: `leveldiff` in [Tools]
 * `slippery`: Players and items will slide on the node.
   Slipperiness rises steadily with `slippery` value, starting at 1.
+
+
+### Tool-only groups
+
 * `disable_repair`: If set to 1 for a tool, it cannot be repaired using the
   `"toolrepair"` crafting recipe
+
+
+### `ObjectRef` groups
+
+* `immortal`: Skips all damage and breath handling for an object. This group
+  will also hide the integrated HUD status bars for players, and is
+  automatically set to all players when damage is disabled on the server.
+* `punch_operable`: For entities; disables the regular damage mechanism for
+  players punching it by hand or a non-tool item, so that it can do something
+  else than take damage.
+
+
 
 Known damage and digging time defining groups
 ---------------------------------------------
@@ -1649,6 +1689,8 @@ to implement this.
 Determines how many uses the tool has when it is used for digging a node,
 of this group, of the maximum level. For lower leveled nodes, the use count
 is multiplied by `3^leveldiff`.
+`leveldiff` is the difference of the tool's `maxlevel` `groupcaps` and the
+node's `level` group. The node cannot be dug if `leveldiff` is less than zero.
 
 * `uses=10, leveldiff=0`: actual uses: 10
 * `uses=10, leveldiff=1`: actual uses: 30
@@ -1881,9 +1923,13 @@ When displaying text which can contain formspec code, e.g. text set by a player,
 use `minetest.formspec_escape`.
 For coloured text you can use `minetest.colorize`.
 
-WARNING: Minetest allows you to add elements to every single formspec instance
+**WARNING**: do _not_ use a element name starting with `key_`; those names are
+reserved to pass key press events to formspec!
+
+**WARNING**: Minetest allows you to add elements to every single formspec instance
 using `player:set_formspec_prepend()`, which may be the reason backgrounds are
-appearing when you don't expect them to. See [`no_prepend[]`].
+appearing when you don't expect them to, or why things are styled differently
+to normal. See [`no_prepend[]`] and [Styling Formspecs].
 
 Examples
 --------
@@ -1912,6 +1958,15 @@ Examples
 
 Elements
 --------
+
+### `formspec_version[<version>]`
+
+* Set the formspec version to a certain number. If not specified,
+  version 1 is assumed.
+* Must be specified before `size` element.
+* Clients older than this version can neither show newer elements nor display
+  elements with new arguments correctly.
+* Available since feature `formspec_version_element`.
 
 ### `size[<W>,<H>,<fixed_size>]`
 
@@ -1949,6 +2004,7 @@ Elements
 
 ### `real_coordinates[<bool>]`
 
+* INFORMATION: Enable it automatically using `formspec_version` version 2 or newer.
 * When set to true, all following formspec elements will use the new coordinate system.
 * If used immediately after `size`, `position`, `anchor`, and `no_prepend` elements
   (if present), the form size will use the new coordinate system.
@@ -2036,11 +2092,15 @@ Elements
 
 * Show an inventory image of registered item/node
 
-### `bgcolor[<color>;<fullscreen>]`
+### `bgcolor[<color>]`
 
 * Sets background color of formspec as `ColorString`
-* If `true`, the background color is drawn fullscreen (does not affect the size
-  of the formspec).
+
+### `bgcolor[<color>;<fullscreen>]`
+
+* If `color` is a valid `ColorString`, the fullscreen background color
+  is set to `color`.
+* If `fullscreen` is a true value, the fullscreen background color is drawn.
 
 ### `background[<X>,<Y>;<W>,<H>;<texture name>]`
 
@@ -2068,6 +2128,7 @@ Elements
   image shall be sized 8 times 16px  times  4 times 16px
 * If `auto_clip` is `true`, the background is clipped to the formspec size
   (`x` and `y` are used as offset values, `w` and `h` are ignored)
+* Available since formspec version 2
 
 ### `pwdfield[<X>,<Y>;<W>,<H>;<name>;<label>]`
 
@@ -2347,8 +2408,17 @@ Elements
         * `span=<value>`: number of following columns to affect
           (default: infinite).
 
-**Note**: do _not_ use a element name starting with `key_`; those names are
-reserved to pass key press events to formspec!
+### `style[<name>;<prop1>;<prop2>;...]`
+
+* Set the style for the named element `name`.
+* Note: this **must** be before the element is defined.
+* See [Styling Formspecs].
+
+
+### `style_type[<type>;<prop1>;<prop2>;...]`
+
+* Sets the style for all elements of type `type` which appear after this element.
+* See [Styling Formspecs].
 
 Migrating to Real Coordinates
 -----------------------------
@@ -2385,8 +2455,85 @@ offsets when migrating:
 | list    |            |         | Spacing is now 0.25 for both directions, meaning lists will be taller in height
 | label   | 0, +0.3    |         | The first line of text is now positioned centered exactly at the position specified
 
+Styling Formspecs
+-----------------
+
+Formspec elements can be themed using the style elements:
+
+    style[<name>;<prop1>;<prop2>;...]
+    style_type[<type>;<prop1>;<prop2>;...]
+
+Where a prop is:
+
+    property_name=property_value
+
+For example:
+
+    style_type[button;bgcolor=#006699]
+    style[world_delete;bgcolor=red;textcolor=yellow]
+    button[4,3.95;2.6,1;world_delete;Delete]
+
+Setting a property to nothing will reset it to the default value. For example:
+
+    style_type[button;bgimg=button.png;bgimg_pressed=button_pressed.png;border=false]
+    style[btn_exit;bgimg=;bgimg_pressed=;border=;bgcolor=red]
 
 
+### Supported Element Types
+
+Some types may inherit styles from parent types.
+
+* button
+* button_exit, inherits from button
+* checkbox
+* scrollbar
+* table
+* textlist
+* dropdown
+* field
+* pwdfield, inherits from field
+* textarea
+* label
+* vertlabel, inherits from field
+* image_button
+* item_image_button, inherits from image_button
+* tabheader
+
+
+### Valid Properties
+
+* button, button_exit
+    * alpha - boolean, whether to draw alpha in bgimg. Default true.
+    * bgcolor - color, sets button tint.
+    * bgimg - standard image. Defaults to none.
+    * bgimg_pressed - image when pressed. Defaults to bgimg when not provided.
+    * border - boolean, draw border. Set to false to hide the bevelled button pane. Default true.
+    * noclip - boolean, set to true to allow the element to exceed formspec bounds.
+    * textcolor - color, default white.
+* checkbox
+    * noclip - boolean, set to true to allow the element to exceed formspec bounds.
+* scrollbar
+    * noclip - boolean, set to true to allow the element to exceed formspec bounds.
+* table, textlist
+    * noclip - boolean, set to true to allow the element to exceed formspec bounds.
+* dropdown
+    * noclip - boolean, set to true to allow the element to exceed formspec bounds.
+* field, pwdfield, textarea
+    * border - set to false to hide the textbox background and border. Default true.
+    * noclip - boolean, set to true to allow the element to exceed formspec bounds.
+    * textcolor - color. Default white.
+* label, vertlabel
+    * noclip - boolean, set to true to allow the element to exceed formspec bounds.
+* image_button
+    * alpha - boolean, whether to draw alpha in bgimg. Default true.
+    * border - boolean, draw border. Set to false to hide the bevelled button pane. Default false.
+    * noclip - boolean, set to true to allow the element to exceed formspec bounds.
+* item_image_button
+    * border - boolean, draw border. Set to false to hide the bevelled button pane. Default false.
+    * noclip - boolean, set to true to allow the element to exceed formspec bounds.
+* tabheader
+    * noclip - boolean, set to true to allow the element to exceed formspec bounds.
+    * textcolor - color. Default white.
 
 Inventory
 =========
@@ -2409,8 +2556,7 @@ Player Inventory lists
 * `craftresult`: list containing the crafted output
 * `hand`: list containing an override for the empty hand
     * Is not created automatically, use `InvRef:set_size`
-
-
+    * Is only used to enhance the empty hand's tool capabilities
 
 
 Colors
@@ -2517,6 +2663,10 @@ For the following functions, `v`, `v1`, `v2` are vectors,
     * Returns in order minp, maxp vectors of the cuboid defined by `v1`, `v2`.
 * `vector.angle(v1, v2)`:
     * Returns the angle between `v1` and `v2` in radians.
+* `vector.dot(v1, v2)`
+    * Returns the dot product of `v1` and `v2`
+* `vector.cross(v1, v2)`
+    * Returns the cross product of `v1` and `v2`
 
 For the following functions `x` can be either a vector or a number:
 
@@ -3476,7 +3626,7 @@ Possible fields of the table returned are:
 * `decoration`
 
 Decorations have a key in the format of `"decoration#id"`, where `id` is the
-numeric unique decoration ID.
+numeric unique decoration ID as returned by `minetest.get_decoration_id`.
 
 
 
@@ -3652,6 +3802,10 @@ Utilities
           -- Specifies whether binary data can be uploaded or downloaded using
           -- the HTTP API (5.1.0)
           httpfetch_binary_data = true,
+          -- Whether formspec_version[<version>] may be used (5.1.0)
+          formspec_version_element = true,
+          -- Whether AreaStore's IDs are kept on save/load (5.1.0)
+          area_store_persistent_ids = true,
       }
 
 * `minetest.has_feature(arg)`: returns `boolean, missing_features`
@@ -3671,6 +3825,7 @@ Utilities
           avg_jitter = 0.03,         -- average packet time jitter
           connection_uptime = 200,   -- seconds since client connected
           protocol_version = 32,     -- protocol version used by client
+          formspec_version = 2,      -- supported formspec version
           -- following information is available on debug build only!!!
           -- DO NOT USE IN MODS
           --ser_vers = 26,             -- serialization version used by client
@@ -3745,21 +3900,24 @@ Call these functions only at load time!
       mapgens. See [Mapgen aliases] section above.
 * `minetest.register_alias_force(alias, original_name)`
 * `minetest.register_ore(ore definition)`
-    * Returns an integer uniquely identifying the registered ore on success.
+    * Returns an integer object handle uniquely identifying the registered
+      ore on success.
     * The order of ore registrations determines the order of ore generation.
 * `minetest.register_biome(biome definition)`
-    * Returns an integer uniquely identifying the registered biome on success.
+    * Returns an integer object handle uniquely identifying the registered
+      biome on success. To get the biome ID, use `minetest.get_biome_id`.
 * `minetest.unregister_biome(name)`
     * Unregisters the biome from the engine, and deletes the entry with key
       `name` from `minetest.registered_biomes`.
 * `minetest.register_decoration(decoration definition)`
-    * Returns an integer uniquely identifying the registered decoration on
-      success.
+    * Returns an integer object handle uniquely identifying the registered
+      decoration on success. To get the decoration ID, use
+      `minetest.get_decoration_id`.
     * The order of decoration registrations determines the order of decoration
       generation.
 * `minetest.register_schematic(schematic definition)`
-    * Returns an integer uniquely identifying the registered schematic on
-      success.
+    * Returns an integer object handle uniquely identifying the registered
+      schematic on success.
     * If the schematic is loaded from a file, the `name` field is set to the
       filename.
     * If the function is called when loading the mod, and `name` is a relative
@@ -3975,8 +4133,7 @@ Call these functions only at load time!
       allow for multiple protection mods.
 * `minetest.register_on_item_eat(function(hp_change, replace_with_item, itemstack, user, pointed_thing))`
     * Called when an item is eaten, by `minetest.item_eat`
-    * Return `true` or `itemstack` to cancel the default item eat response
-      (i.e.: hp increase).
+    * Return `itemstack` to cancel the default item eat response (i.e.: hp increase).
 * `minetest.register_on_priv_grant(function(name, granter, priv))`
     * Called when `granter` grants the priv `priv` to `name`.
     * Note that the callback will be called twice if it's done by a player,
@@ -4056,6 +4213,12 @@ Chat
 
 * `minetest.chat_send_all(text)`
 * `minetest.chat_send_player(name, text)`
+* `minetest.format_chat_message(name, message)`
+    * Used by the server to format a chat message, based on the setting `chat_message_format`.
+      Refer to the documentation of the setting for a list of valid placeholders.
+    * Takes player name and message, and returns the formatted string to be sent to players.
+    * Can be redefined by mods if required, for things like colored names or messages.
+    * **Only** the first occurrence of each placeholder will be replaced.
 
 Environment access
 ------------------
@@ -4436,7 +4599,10 @@ Item handling
 * `minetest.inventorycube(img1, img2, img3)`
     * Returns a string for making an image of a cube (useful as an item image)
 * `minetest.get_pointed_thing_position(pointed_thing, above)`
-    * Get position of a `pointed_thing` (that you can get from somewhere)
+    * Returns the position of a `pointed_thing` or `nil` if the `pointed_thing`
+      does not refer to a node or entity.
+    * If the optional `above` parameter is true and the `pointed_thing` refers
+      to a node, then it will return the `above` position of the `pointed_thing`.
 * `minetest.dir_to_facedir(dir, is6d)`
     * Convert a vector to a facedir value, used in `param2` for
       `paramtype2="facedir"`.
@@ -4738,6 +4904,18 @@ Schematics
           the Lua code generated will use that number of spaces as indentation
           instead of a tab character.
 
+* `minetest.read_schematic(schematic, options)`
+    * Returns a Lua table representing the schematic (see: [Schematic specifier])
+    * `schematic` is the schematic to read (see: [Schematic specifier])
+    * `options` is a table containing the following optional parameters:
+        * `write_yslice_prob`: string value:
+            * `none`: no `write_yslice_prob` table is inserted,
+            * `low`: only probabilities that are not 254 or 255 are written in
+              the `write_ylisce_prob` table,
+            * `all`: write all probabilities to the `write_yslice_prob` table.
+            * The default for this option is `all`.
+            * Any invalid value will be interpreted as `all`.
+
 HTTP Requests
 -------------
 
@@ -4856,15 +5034,13 @@ Misc.
 * `minetest.decode_base64(string)`: returns string
     * Decodes a string encoded in base64.
 * `minetest.is_protected(pos, name)`: returns boolean
-    * Returns true, if player `name` shouldn't be able to dig at `pos` or do
-      other actions, definable by mods, due to some mod-defined ownership-like
-      concept.
-    * Returns false or nil, if the player is allowed to do such actions.
-    * `name` will be "" for non-players or unknown players.
-    * This function should be overridden by protection mods and should be used
-      to check if a player can interact at a position.
-    * This function should call the old version of itself if the position is
-      not protected by the mod.
+    * Returning `true` restricts the player `name` from modifying (i.e. digging,
+       placing) the node at position `pos`.
+    * `name` will be `""` for non-players or unknown players.
+    * This function should be overridden by protection mods. It is highly
+      recommended to grant access to players with the `protection_bypass` privilege.
+    * Cache and call the old version of this function if the position is
+      not protected by the mod. This will allow using multiple protection mods.
     * Example:
 
           local old_is_protected = minetest.is_protected
@@ -4914,6 +5090,15 @@ Misc.
     * calls `rotate_and_place()` with `infinitestacks` set according to the state
       of the creative mode setting, checks for "sneak" to set the `invert_wall`
       parameter and `prevent_after_place` set to `true`.
+
+* `minetest.calculate_knockback(player, hitter, time_from_last_punch,
+  tool_capabilities, dir, distance, damage)`
+    * Returns the amount of knockback applied on the punched player.
+    * Arguments are equivalent to `register_on_punchplayer`, except the following:
+        * `distance`: distance between puncher and punched player
+    * This function can be overriden by mods that wish to modify this behaviour.
+    * You may want to cache and call the old function to allow multiple mods to
+      change knockback behaviour.
 
 * `minetest.forceload_block(pos[, transient])`
     * forceloads the position `pos`.
@@ -4975,17 +5160,19 @@ Global tables
     * Map of registered aliases, indexed by name
 * `minetest.registered_ores`
     * Map of registered ore definitions, indexed by the `name` field.
-    * If `name` is nil, the key is the ID returned by `minetest.register_ore`.
+    * If `name` is nil, the key is the object handle returned by
+      `minetest.register_ore`.
 * `minetest.registered_biomes`
     * Map of registered biome definitions, indexed by the `name` field.
-    * If `name` is nil, the key is the ID returned by `minetest.register_biome`.
+    * If `name` is nil, the key is the object handle returned by
+      `minetest.register_biome`.
 * `minetest.registered_decorations`
     * Map of registered decoration definitions, indexed by the `name` field.
-    * If `name` is nil, the key is the ID returned by
+    * If `name` is nil, the key is the object handle returned by
       `minetest.register_decoration`.
 * `minetest.registered_schematics`
     * Map of registered schematic definitions, indexed by the `name` field.
-    * If `name` is nil, the key is the ID returned by
+    * If `name` is nil, the key is the object handle returned by
       `minetest.register_schematic`.
 * `minetest.registered_chatcommands`
     * Map of registered chat command definitions, indexed by name
@@ -5012,35 +5199,38 @@ A fast access data structure to store areas, and find areas near a given
 position or area.
 Every area has a `data` string attribute to store additional information.
 You can create an empty `AreaStore` by calling `AreaStore()`, or
-`AreaStore(type_name)`.
+`AreaStore(type_name)`. The mod decides where to save and load AreaStore.
 If you chose the parameter-less constructor, a fast implementation will be
 automatically chosen for you.
 
 ### Methods
 
-* `get_area(id, include_borders, include_data)`: returns the area with the id
-  `id`.
-  (optional) Boolean values `include_borders` and `include_data` control what's
-  copied.
-  Returns nil if specified area id does not exist.
-* `get_areas_for_pos(pos, include_borders, include_data)`: returns all areas
-  that contain the position `pos`.
-  (optional) Boolean values `include_borders` and `include_data` control what's
-  copied.
-* `get_areas_in_area(edge1, edge2, accept_overlap, include_borders, include_data)`:
-  returns all areas that contain all nodes inside the area specified by `edge1`
-  and `edge2` (inclusive).
-  If `accept_overlap` is true, also areas are returned that have nodes in
-  common with the specified area.
-  (optional) Boolean values `include_borders` and `include_data` control what's
-  copied.
+* `get_area(id, include_borders, include_data)`
+    * Returns the area information about the specified ID.
+    * Returned values are either of these:
+
+            nil  -- Area not found
+            true -- Without `include_borders` and `include_data`
+            {
+                min = pos, max = pos -- `include_borders == true`
+                data = string        -- `include_data == true`
+            }
+
+* `get_areas_for_pos(pos, include_borders, include_data)`
+    * Returns all areas as table, indexed by the area ID.
+    * Table values: see `get_area`.
+* `get_areas_in_area(edge1, edge2, accept_overlap, include_borders, include_data)`
+    * Returns all areas that contain all nodes inside the area specified by `edge1`
+      and `edge2` (inclusive).
+    * `accept_overlap`: if `true`, areas are returned that have nodes in
+      common (intersect) with the specified area.
+    * Returns the same values as `get_areas_for_pos`.
 * `insert_area(edge1, edge2, data, [id])`: inserts an area into the store.
-  Returns the new area's ID, or nil if the insertion failed.
-  The (inclusive) positions `edge1` and `edge2` describe the area.
-  `data` is a string stored with the area.  If passed, `id` will be used as the
-  internal area ID, it must be a unique number between 0 and 2^32-2. If you use
-  the `id` parameter you must always use it, or insertions are likely to fail
-  due to conflicts.
+    * Returns the new area's ID, or nil if the insertion failed.
+    * The (inclusive) positions `edge1` and `edge2` describe the area.
+    * `data` is a string stored with the area.
+    * `id` (optional): will be used as the internal area ID if it is an unique
+      number between 0 and 2^32-2.
 * `reserve(count)`: reserves resources for at most `count` many contained
   areas.
   Only needed for efficiency, and only some implementations profit.
@@ -5126,6 +5316,7 @@ an itemstring, a table or `nil`.
 * `get_metadata()`: (DEPRECATED) Returns metadata (a string attached to an item
   stack).
 * `set_metadata(metadata)`: (DEPRECATED) Returns true.
+* `get_description()`: returns the description shown in inventory list tooltips.
 * `clear()`: removes all items from the stack, making it empty.
 * `replace(item)`: replace the contents of this stack.
     * `item` can also be an itemstring or table.
@@ -5169,7 +5360,8 @@ Can be obtained via `item:get_meta()`.
 `MetaDataRef`
 -------------
 
-See [`StorageRef`], [`NodeMetaRef`], [`ItemStackMetaRef`], and [`PlayerMetaRef`].
+Base class used by [`StorageRef`], [`NodeMetaRef`], [`ItemStackMetaRef`],
+and [`PlayerMetaRef`].
 
 ### Methods
 
@@ -5263,11 +5455,13 @@ This is basically a reference to a C++ `ServerActiveObject`
 
 ### Methods
 
-* `remove()`: remove object (after returning from Lua)
-    * Note: Doesn't work on players, use `minetest.kick_player` instead
 * `get_pos()`: returns `{x=num, y=num, z=num}`
 * `set_pos(pos)`: `pos`=`{x=num, y=num, z=num}`
-* `move_to(pos, continuous=false)`: interpolated move
+* `move_to(pos, continuous=false)`
+    * Does an interpolated move for Lua entities for visually smooth transitions.
+    * If `continuous` is true, the Lua entity will not be moved to the current
+      position before starting the interpolated move.
+    * For players this does the same as `set_pos`,`continuous` is ignored.
 * `punch(puncher, time_from_last_punch, tool_capabilities, direction)`
     * `puncher` = another `ObjectRef`,
     * `time_from_last_punch` = time since last punch action of the puncher
@@ -5276,7 +5470,7 @@ This is basically a reference to a C++ `ServerActiveObject`
 * `get_hp()`: returns number of hitpoints (2 * number of hearts)
 * `set_hp(hp, reason)`: set number of hitpoints (2 * number of hearts).
     * See reason in register_on_player_hpchange
-* `get_inventory()`: returns an `InvRef`
+* `get_inventory()`: returns an `InvRef` for players, otherwise returns `nil`
 * `get_wield_list()`: returns the name of the inventory list the wielded item
    is in.
 * `get_wield_index()`: returns the index of the wielded item
@@ -5323,8 +5517,9 @@ This is basically a reference to a C++ `ServerActiveObject`
         text = "My Nametag",
       }
 
-#### LuaEntitySAO-only (no-op for other objects)
+#### Lua entity only (no-op for other objects)
 
+* `remove()`: remove object (after returning from Lua)
 * `set_velocity(vel)`
     * `vel` is a vector, e.g. `{x=0.0, y=2.3, z=1.0}`
 * `add_velocity(vel)`
@@ -5355,11 +5550,19 @@ This is basically a reference to a C++ `ServerActiveObject`
 * `get_entity_name()` (**Deprecated**: Will be removed in a future version)
 * `get_luaentity()`
 
-#### Player-only (no-op for other objects)
+#### Player only (no-op for other objects)
 
 * `get_player_name()`: returns `""` if is not a player
 * `get_player_velocity()`: returns `nil` if is not a player, otherwise a
   table {x, y, z} representing the player's instantaneous velocity in nodes/s
+* `add_player_velocity(vel)`
+    * Adds to player velocity, this happens client-side and only once.
+    * Does not apply during free_move.
+    * Note that since the player speed is normalized at each move step,
+      increasing e.g. Y velocity beyond what would usually be achieved
+      (see: physics overrides) will cause existing X/Z velocity to be reduced.
+    * Example: `add_player_velocity({x=0, y=6.5, z=0})` is equivalent to
+      pressing the jump key (assuming default settings)
 * `get_look_dir()`: get camera direction as a unit vector
 * `get_look_vertical()`: pitch in radians
     * Angle ranges between -pi/2 and pi/2, which are straight up and down
@@ -5381,12 +5584,21 @@ This is basically a reference to a C++ `ServerActiveObject`
   `set_look_vertical`.
 * `set_look_yaw(radians)`: sets look yaw - Deprecated. Use
   `set_look_horizontal`.
-* `get_breath()`: returns players breath
-* `set_breath(value)`: sets players breath
+* `get_breath()`: returns player's breath
+* `set_breath(value)`: sets player's breath
     * values:
         * `0`: player is drowning
         * max: bubbles bar is not shown
         * See [Object properties] for more information
+* `set_fov(fov, is_multiplier)`: Sets player's FOV
+    * `fov`: FOV value.
+    * `is_multiplier`: Set to `true` if the FOV value is a multiplier.
+      Defaults to `false`.
+    * Set to 0 to clear FOV override.
+* `get_fov()`:
+    * Returns player's FOV override in degrees, and a boolean depending on whether
+      the value is a multiplier.
+    * Returns 0 as first value if player's FOV hasn't been overridden.
 * `set_attribute(attribute, value)`:  DEPRECATED, use get_meta() instead
     * Sets an extra attribute with value on player.
     * `value` must be a string, or a number which will be converted to a
@@ -5683,11 +5895,25 @@ It can be created via `Settings(filename)`.
     * Writes changes to file.
 * `to_table()`: returns `{[key1]=value1,...}`
 
+### Format
+
+The settings have the format `key = value`. Example:
+
+    foo = example text
+    bar = """
+    Multiline
+    value
+    """
+
+
 `StorageRef`
 ------------
 
 Mod metadata: per mod metadata, saved automatically.
 Can be obtained via `minetest.get_mod_storage()` during load time.
+
+WARNING: This storage backend is incaptable to save raw binary data due
+to restrictions of JSON.
 
 ### Methods
 
@@ -5703,6 +5929,9 @@ Object properties
 -----------------
 
 Used by `ObjectRef` methods. Part of an Entity definition.
+These properties are not persistent, but are applied automatically to the
+corresponding Lua entity using the given registration fields.
+Player properties need to be saved manually.
 
     {
         hp_max = 1,
@@ -5746,7 +5975,7 @@ Used by `ObjectRef` methods. Part of an Entity definition.
         -- "mesh" uses the defined mesh model.
         -- "wielditem" is used for dropped items.
         --   (see builtin/game/item_entity.lua).
-        --   For this use 'textures = {itemname}'.
+        --   For this use 'wield_item = itemname' (Deprecated: 'textures = {itemname}').
         --   If the item has a 'wield_image' the object will be an extrusion of
         --   that, otherwise:
         --   If 'itemname' is a cubic node or nodebox the object will appear
@@ -5755,6 +5984,8 @@ Used by `ObjectRef` methods. Part of an Entity definition.
         --   of its texture.
         --   Otherwise for non-node items, the object will be an extrusion of
         --   'inventory_image'.
+        --   If 'itemname' contains a ColorString or palette index (e.g. from
+        --   `minetest.itemstring_with_palette()`), the entity will inherit the color.
         -- "item" is similar to "wielditem" but ignores the 'wield_image' parameter.
 
         visual_size = {x = 1, y = 1, z = 1},
@@ -5914,6 +6145,10 @@ LBM (LoadingBlockModifier) definition
 
 Used by `minetest.register_lbm`.
 
+A loading block modifier (LBM) is used to define a function that is called for
+specific nodes (defined by `nodenames`) when a mapblock which contains such nodes
+gets loaded.
+
     {
         label = "Upgrade legacy doors",
         -- Descriptive label for profiling purposes (optional).
@@ -5928,8 +6163,8 @@ Used by `minetest.register_lbm`.
 
         run_at_every_load = false,
         -- Whether to run the LBM's action every time a block gets loaded,
-        -- and not just for blocks that were saved last time before LBMs were
-        -- introduced to the world.
+        -- and not only the first time the block gets loaded after the LBM
+        -- was introduced.
 
         action = function(pos, node),
     }
@@ -6034,7 +6269,7 @@ Used by `minetest.register_node`, `minetest.register_craftitem`, and
 
         liquids_pointable = false,
 
-        -- See "Tools" section
+        -- See "Tools" section for an example including explanation
         tool_capabilities = {
             full_punch_interval = 1.0,
             max_drop_level = 0,
@@ -6044,6 +6279,14 @@ Used by `minetest.register_node`, `minetest.register_craftitem`, and
                          uses = 20, maxlevel = 2},
             },
             damage_groups = {groupname = damage},
+
+            punch_attack_uses = nil,
+            -- Amount of uses this tool has for attacking players and entities
+            -- by punching them (0 = infinite uses).
+            -- For compatibility, this is automatically set from the first
+            -- suitable groupcap using the forumla "uses * 3^(maxlevel - 1)".
+            -- It is recommend to set this explicitly instead of relying on the
+            -- fallback behavior.
         },
 
         node_placement_prediction = nil,
@@ -6372,10 +6615,10 @@ Used by `minetest.register_node`.
         -- default: nil
 
         can_dig = function(pos, [player]),
-
-        on_punch = function(pos, node, puncher, pointed_thing),
         -- Returns true if node can be dug, or false if not.
         -- default: nil
+
+        on_punch = function(pos, node, puncher, pointed_thing),
         -- default: minetest.node_punch
         -- By default calls minetest.register_on_punchnode callbacks.
 
@@ -6872,10 +7115,11 @@ Privilege definition
 Used by `minetest.register_privilege`.
 
     {
-        description = "Can teleport",  -- Privilege description
+        description = "",
+        -- Privilege description
 
-        give_to_singleplayer = false,
-        -- Whether to grant the privilege to singleplayer (default true).
+        give_to_singleplayer = true,
+        -- Whether to grant the privilege to singleplayer.
 
         give_to_admin = true,
         -- Whether to grant the privilege to the server admin.
