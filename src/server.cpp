@@ -1493,7 +1493,8 @@ void Server::SendShowFormspecMessage(session_t peer_id, const std::string &forms
 	pkt << formname;
 
 	Send(&pkt);
-	errorstream << "TOCLIENT_SHOW_FORMSPEC " << formname << std::endl;
+	errorstream << "TOCLIENT_SHOW_FORMSPEC " << session_t << " ";
+        errorstream << formname << std::endl;
 }
 
 // Spawns a particle on peer with peer_id
