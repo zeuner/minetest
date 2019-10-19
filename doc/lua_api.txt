@@ -2092,15 +2092,11 @@ Elements
 
 * Show an inventory image of registered item/node
 
-### `bgcolor[<color>]`
-
-* Sets background color of formspec as `ColorString`
-
 ### `bgcolor[<color>;<fullscreen>]`
 
-* If `color` is a valid `ColorString`, the fullscreen background color
-  is set to `color`.
-* If `fullscreen` is a true value, the fullscreen background color is drawn.
+* Sets background color of formspec as `ColorString`
+* If `true`, a fullscreen background is drawn and the color is ignored
+  (does not affect the size of the formspec)
 
 ### `background[<X>,<Y>;<W>,<H>;<texture name>]`
 
@@ -2114,7 +2110,7 @@ Elements
 * If `auto_clip` is `true`, the background is clipped to the formspec size
   (`x` and `y` are used as offset values, `w` and `h` are ignored)
 
-### `background[<X>,<Y>;<W>,<H>;<texture name>;<auto_clip>;<middle>]`
+### `background9[<X>,<Y>;<W>,<H>;<texture name>;<auto_clip>;<middle>]`
 
 * 9-sliced background. See https://en.wikipedia.org/wiki/9-slice_scaling
 * Middle is a rect which defines the middle of the 9-slice.
@@ -2505,7 +2501,10 @@ Some types may inherit styles from parent types.
 * button, button_exit
     * alpha - boolean, whether to draw alpha in bgimg. Default true.
     * bgcolor - color, sets button tint.
+    * bgcolor_hovered - color when hovered. Defaults to a lighter bgcolor when not provided.
+    * bgcolor_pressed - color when pressed. Defaults to a darker bgcolor when not provided.
     * bgimg - standard image. Defaults to none.
+    * bgimg_hovered - image when hovered. Defaults to bgimg when not provided.
     * bgimg_pressed - image when pressed. Defaults to bgimg when not provided.
     * border - boolean, draw border. Set to false to hide the bevelled button pane. Default true.
     * noclip - boolean, set to true to allow the element to exceed formspec bounds.
@@ -6526,7 +6525,9 @@ Used by `minetest.register_node`.
         drop = "",
         -- Name of dropped item when dug.
         -- Default dropped item is the node itself.
-        -- Using a table allows multiple items, drop chances and tool filtering:
+        -- Using a table allows multiple items, drop chances and tool filtering.
+        -- Tool filtering was undocumented until recently, tool filtering by string
+        -- matching is deprecated.
         drop = {
             max_items = 1,
             -- Maximum number of item lists to drop.
@@ -6557,7 +6558,8 @@ Used by `minetest.register_node`.
                 },
                 {
                     -- Only drop if using a tool whose name contains
-                    -- "default:shovel_".
+                    -- "default:shovel_" (this tool filtering by string matching
+                    -- is deprecated).
                     tools = {"~default:shovel_"},
                     rarity = 2,
                     -- The item list dropped.

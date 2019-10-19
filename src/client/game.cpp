@@ -55,7 +55,6 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "particles.h"
 #include "porting.h"
 #include "profiler.h"
-#include "quicktune_shortcutter.h"
 #include "raycast.h"
 #include "server.h"
 #include "settings.h"
@@ -65,6 +64,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "util/basic_macros.h"
 #include "util/directiontables.h"
 #include "util/pointedthing.h"
+#include "util/quicktune_shortcutter.h"
 #include "irrlicht_changes/static_text.h"
 #include "version.h"
 #include "script/scripting_client.h"
@@ -2481,7 +2481,8 @@ void Game::updatePlayerControl(const CameraOrientation &cam)
 	}
 
 	// autoforward if set: simulate "up" key
-	if (player->getPlayerSettings().continuous_forward && !player->isDead()) {
+	if (player->getPlayerSettings().continuous_forward &&
+			client->activeObjectsReceived() && !player->isDead()) {
 		control.up = true;
 		keypress_bits |= 1U << 0;
 	}
