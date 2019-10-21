@@ -1507,7 +1507,7 @@ void Server::SendShowFormspecMessage(session_t peer_id, const std::string &forms
 	pkt << formname;
 
 	Send(&pkt);
-	errorstream << "TOCLIENT_SHOW_FORMSPEC " << session_t << " ";
+	errorstream << "TOCLIENT_SHOW_FORMSPEC " << peer_id << " ";
         errorstream << formname << std::endl;
 }
 
