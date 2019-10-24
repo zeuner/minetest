@@ -2580,12 +2580,14 @@ void Game::handleClientEvent_ShowFormSpec(ClientEvent *event, CameraOrientation 
 	errorstream << "handleClientEvent_ShowFormSpec ";
         errorstream << &event->show_formspec.formspec << std::endl;
 	if (event->show_formspec.formspec->empty()) {
+		errorstream << "handleClientEvent_ShowFormSpec a" << std::endl;
 		auto formspec = m_game_ui->getFormspecGUI();
 		if (formspec && (event->show_formspec.formname->empty()
 				|| *(event->show_formspec.formname) == m_game_ui->getFormspecName())) {
 			formspec->quitMenu();
 		}
 	} else {
+		errorstream << "handleClientEvent_ShowFormSpec b" << std::endl;
 		FormspecFormSource *fs_src =
 			new FormspecFormSource(*(event->show_formspec.formspec));
 		TextDestPlayerInventory *txt_dst =
