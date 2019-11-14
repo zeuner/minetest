@@ -27,6 +27,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "inventorymanager.h"
 #include "modalMenu.h"
 #include "guiTable.h"
+#include "log.h"
 #include "network/networkprotocol.h"
 #include "client/joystick_controller.h"
 #include "util/string.h"
@@ -335,6 +336,7 @@ public:
 	// form_src is deleted by this GUIFormSpecMenu
 	void setFormSource(IFormSource *form_src)
 	{
+		errorstream << "GUIFormSpecMenu::setFormSource" << std::endl;
 		delete m_form_src;
 		m_form_src = form_src;
 	}
@@ -342,6 +344,7 @@ public:
 	// text_dst is deleted by this GUIFormSpecMenu
 	void setTextDest(TextDest *text_dst)
 	{
+		errorstream << "GUIFormSpecMenu::setTextDest" << std::endl;
 		delete m_text_dst;
 		m_text_dst = text_dst;
 	}
