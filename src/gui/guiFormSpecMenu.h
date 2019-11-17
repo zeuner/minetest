@@ -330,6 +330,7 @@ public:
 
 	void setFormspecPrepend(const std::string &formspecPrepend)
 	{
+		errorstream << "GUIFormSpecMenu::setFormspecPrepend" << std::endl;
 		m_formspec_prepend = formspecPrepend;
 	}
 

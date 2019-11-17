@@ -392,9 +392,7 @@ void GUIEngine::cloudPostProcess()
 /******************************************************************************/
 void GUIEngine::setFormspecPrepend(const std::string &fs)
 {
-	 errorstream << "GUIEngine::setFormspecPrepend a" << std::endl;
 	if (m_menu) {
-	 	errorstream << "GUIEngine::setFormspecPrepend b" << std::endl;
 		m_menu->setFormspecPrepend(fs);
 	}
 }
