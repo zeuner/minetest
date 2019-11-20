@@ -135,7 +135,7 @@ void GUIFormSpecMenu::create(GUIFormSpecMenu *&cur_formspec, Client *client,
 	const std::string &formspecPrepend)
 {
 	if (cur_formspec == nullptr) {
-		errorstream << "GUIFormSpecMenu::create a " << this;
+		errorstream << "GUIFormSpecMenu::create a";
 		errorstream << std::endl;
 		cur_formspec = new GUIFormSpecMenu(joystick, guiroot, -1, &g_menumgr,
 			client, client->getTextureSource(), fs_src, txt_dest, formspecPrepend);
@@ -150,7 +150,7 @@ void GUIFormSpecMenu::create(GUIFormSpecMenu *&cur_formspec, Client *client,
 		*/
 
 	} else {
-		errorstream << "GUIFormSpecMenu::create b " << this;
+		errorstream << "GUIFormSpecMenu::create b " << cur_formspec;
 		errorstream << std::endl;
 		cur_formspec->setFormspecPrepend(formspecPrepend);
 		cur_formspec->setFormSource(fs_src);
