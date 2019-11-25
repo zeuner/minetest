@@ -113,6 +113,8 @@ GUIFormSpecMenu::GUIFormSpecMenu(JoystickController *joystick,
 
 	m_tooltip_show_delay = (u32)g_settings->getS32("tooltip_show_delay");
 	m_tooltip_append_itemname = g_settings->getBool("tooltip_append_itemname");
+	errorstream << "GUIFormSpecMenu::GUIFormSpecMenu " << this;
+	errorstream << std::endl;
 }
 
 GUIFormSpecMenu::~GUIFormSpecMenu()
