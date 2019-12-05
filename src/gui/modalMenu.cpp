@@ -89,6 +89,7 @@ void GUIModalMenu::draw()
 */
 void GUIModalMenu::quitMenu()
 {
+	errorstream << "GUIModalMenu::quitMenu " << this << std::endl;
 	allowFocusRemoval(true);
 	// This removes Environment's grab on us
 	Environment->removeFocus(this);
