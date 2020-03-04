@@ -358,7 +358,9 @@ int ModApiCraft::l_clear_craft(lua_State *L)
 	CraftInput input(method, width, items);
 
 	if (!craftdef->clearCraftsByInput(input, getServer(L))) {
-		warningstream << "No craft recipe matches input" << std::endl;
+		warningstream << "No craft recipe matches input ";
+		warningstream << input.dump(
+		) << std::endl;
 		lua_pushboolean(L, false);
 		return 1;
 	}
