@@ -5875,6 +5875,8 @@ object you are working with still exists.
     * Returns player's FOV override in degrees, and a boolean depending on whether
       the value is a multiplier.
     * Returns 0 as first value if player's FOV hasn't been overridden.
+* `get_lifetime()`: returns the elapsed time since the player joined the game.
+* `get_idletime()`: returns the elapsed time since the player was last active.
 * `set_attribute(attribute, value)`:  DEPRECATED, use get_meta() instead
     * Sets an extra attribute with value on player.
     * `value` must be a string, or a number which will be converted to a

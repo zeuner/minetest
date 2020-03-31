@@ -499,6 +499,9 @@ void Server::process_PlayerPos(RemotePlayer *player, PlayerSAO *playersao,
 	player->control.LMB = (keyPressed & 128);
 	player->control.RMB = (keyPressed & 256);
 
+	// Player change detected, so reset idle timer
+	player->resetIdletime();
+
 	if (playersao->checkMovementCheat()) {
 		// Call callbacks
 		m_script->on_cheat(playersao, "moved_too_fast");
@@ -737,6 +740,9 @@ void Server::handleCommand_InventoryAction(NetworkPacket* pkt)
 		}
 	}
 
+	// Player is active, so reset idle timer
+	player->resetIdletime( );
+
 	// Do the action
 	a->apply(this, playersao, this);
 	// Eat the action
@@ -773,6 +779,9 @@ void Server::handleCommand_ChatMessage(NetworkPacket* pkt)
 	// Get player name of this client
 	std::string name = player->getName();
 	std::wstring wname = narrow_to_wide(name);
+
+	// Player is active, so reset idle timer
+	player->resetIdletime( );
 
 	std::wstring answer_to_sender = handleChat(name, wname, message, true, player);
 	if (!answer_to_sender.empty()) {
@@ -1465,6 +1474,9 @@ void Server::handleCommand_NodeMetaFields(NetworkPacket* pkt)
 	// Check the target node for rollback data; leave others unnoticed
 	RollbackNode rn_old(&m_env->getMap(), p, this);
 
+	// Player is active, so reset idle timer
+	player->resetIdletime( );
+
 	m_script->node_on_receive_fields(p, formname, fields, playersao);
 
 	// Report rollback data
@@ -1508,6 +1520,9 @@ void Server::handleCommand_InventoryFields(NetworkPacket* pkt)
 		DisconnectPeer(pkt->getPeerId());
 		return;
 	}
+
+	// Player is active, so reset idle timer
+	player->resetIdletime( );
 
 	if (client_formspec_name.empty()) { // pass through inventory submits
 		m_script->on_playerReceiveFields(playersao, client_formspec_name, fields);
