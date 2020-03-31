@@ -32,6 +32,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <fstream>
 #include <list>
 #include <map>
+#include <boost/thread/mutex.hpp>
 
 class NetworkPacket;
 
@@ -263,7 +264,7 @@ private:
 
 	u16 m_oldest_non_answered_ack;
 
-	std::mutex m_list_mutex;
+	boost::mutex m_list_mutex;
 };
 
 /*

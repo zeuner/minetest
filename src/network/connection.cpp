@@ -160,7 +160,7 @@ SharedBuffer<u8> makeReliablePacket(const SharedBuffer<u8> &data, u16 seqnum)
 
 void ReliablePacketBuffer::print()
 {
-	MutexAutoLock listlock(m_list_mutex);
+	boost::unique_lock<boost::mutex> listlock(m_list_mutex);
 	LOG(dout_con<<"Dump of ReliablePacketBuffer:" << std::endl);
 	unsigned int index = 0;
 	for (BufferedPacket &bufferedPacket : m_list) {
@@ -172,13 +172,13 @@ void ReliablePacketBuffer::print()
 
 bool ReliablePacketBuffer::empty()
 {
-	MutexAutoLock listlock(m_list_mutex);
+	boost::unique_lock<boost::mutex> listlock(m_list_mutex);
 	return m_list.empty();
 }
 
 u32 ReliablePacketBuffer::size()
 {
-	MutexAutoLock listlock(m_list_mutex);
+	boost::unique_lock<boost::mutex> listlock(m_list_mutex);
 	return m_list.size();
 }
 
@@ -201,7 +201,7 @@ RPBSearchResult ReliablePacketBuffer::notFound()
 
 bool ReliablePacketBuffer::getFirstSeqnum(u16& result)
 {
-	MutexAutoLock listlock(m_list_mutex);
+	boost::unique_lock<boost::mutex> listlock(m_list_mutex);
 	if (m_list.empty())
 		return false;
 	const BufferedPacket &p = *m_list.begin();
@@ -211,7 +211,7 @@ bool ReliablePacketBuffer::getFirstSeqnum(u16& result)
 
 BufferedPacket ReliablePacketBuffer::popFirst()
 {
-	MutexAutoLock listlock(m_list_mutex);
+	boost::unique_lock<boost::mutex> listlock(m_list_mutex);
 	if (m_list.empty())
 		throw NotFoundException("Buffer is empty");
 	BufferedPacket p = *m_list.begin();
@@ -228,7 +228,7 @@ BufferedPacket ReliablePacketBuffer::popFirst()
 
 BufferedPacket ReliablePacketBuffer::popSeqnum(u16 seqnum)
 {
-	MutexAutoLock listlock(m_list_mutex);
+	boost::unique_lock<boost::mutex> listlock(m_list_mutex);
 	RPBSearchResult r = findPacket(seqnum);
 	if (r == notFound()) {
 		LOG(dout_con<<"Sequence number: " << seqnum
@@ -258,7 +258,7 @@ BufferedPacket ReliablePacketBuffer::popSeqnum(u16 seqnum)
 
 void ReliablePacketBuffer::insert(BufferedPacket &p, u16 next_expected)
 {
-	MutexAutoLock listlock(m_list_mutex);
+	boost::unique_lock<boost::mutex> listlock(m_list_mutex);
 	if (p.data.getSize() < BASE_HEADER_SIZE + 3) {
 		errorstream << "ReliablePacketBuffer::insert(): Invalid data size for "
 			"reliable packet" << std::endl;
@@ -354,7 +354,7 @@ void ReliablePacketBuffer::insert(BufferedPacket &p, u16 next_expected)
 
 void ReliablePacketBuffer::incrementTimeouts(float dtime)
 {
-	MutexAutoLock listlock(m_list_mutex);
+	boost::unique_lock<boost::mutex> listlock(m_list_mutex);
 	for (BufferedPacket &bufferedPacket : m_list) {
 		bufferedPacket.time += dtime;
 		bufferedPacket.totaltime += dtime;
@@ -364,7 +364,7 @@ void ReliablePacketBuffer::incrementTimeouts(float dtime)
 std::list<BufferedPacket> ReliablePacketBuffer::getTimedOuts(float timeout,
 													unsigned int max_packets)
 {
-	MutexAutoLock listlock(m_list_mutex);
+	boost::unique_lock<boost::mutex> listlock(m_list_mutex);
 	std::list<BufferedPacket> timed_outs;
 	for (BufferedPacket &bufferedPacket : m_list) {
 		if (bufferedPacket.time >= timeout) {
