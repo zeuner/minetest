@@ -208,8 +208,6 @@ void read_object_properties(lua_State *L, int index,
 	getboolfield(L, -1, "physical", prop->physical);
 	getboolfield(L, -1, "collide_with_objects", prop->collideWithObjects);
 
-	getfloatfield(L, -1, "weight", prop->weight);
-
 	lua_getfield(L, -1, "collisionbox");
 	bool collisionbox_defined = lua_istable(L, -1);
 	if (collisionbox_defined)
@@ -340,8 +338,6 @@ void push_object_properties(lua_State *L, ObjectProperties *prop)
 	lua_setfield(L, -2, "physical");
 	lua_pushboolean(L, prop->collideWithObjects);
 	lua_setfield(L, -2, "collide_with_objects");
-	lua_pushnumber(L, prop->weight);
-	lua_setfield(L, -2, "weight");
 	push_aabb3f(L, prop->collisionbox);
 	lua_setfield(L, -2, "collisionbox");
 	push_aabb3f(L, prop->selectionbox);
@@ -1023,6 +1019,7 @@ void read_server_sound_params(lua_State *L, int index,
 		params.max_hear_distance = BS*getfloatfield_default(L, index,
 				"max_hear_distance", params.max_hear_distance/BS);
 		getboolfield(L, index, "loop", params.loop);
+		getstringfield(L, index, "exclude_player", params.exclude_player);
 	}
 }
 
@@ -1851,11 +1848,13 @@ void read_hud_element(lua_State *L, HudElement *elem)
 	elem->size = lua_istable(L, -1) ? read_v2s32(L, -1) : v2s32();
 	lua_pop(L, 1);
 
-	elem->name   = getstringfield_default(L, 2, "name", "");
-	elem->text   = getstringfield_default(L, 2, "text", "");
-	elem->number = getintfield_default(L, 2, "number", 0);
-	elem->item   = getintfield_default(L, 2, "item", 0);
-	elem->dir    = getintfield_default(L, 2, "direction", 0);
+	elem->name    = getstringfield_default(L, 2, "name", "");
+	elem->text    = getstringfield_default(L, 2, "text", "");
+	elem->number  = getintfield_default(L, 2, "number", 0);
+	elem->item    = getintfield_default(L, 2, "item", 0);
+	elem->dir     = getintfield_default(L, 2, "direction", 0);
+	elem->z_index = MYMAX(S16_MIN, MYMIN(S16_MAX,
+			getintfield_default(L, 2, "z_index", 0)));
 
 	// Deprecated, only for compatibility's sake
 	if (elem->dir == 0)
@@ -1921,6 +1920,9 @@ void push_hud_element(lua_State *L, HudElement *elem)
 
 	push_v3f(L, elem->world_pos);
 	lua_setfield(L, -2, "world_pos");
+
+	lua_pushnumber(L, elem->z_index);
+	lua_setfield(L, -2, "z_index");
 }
 
 HudElementStat read_hud_change(lua_State *L, HudElement *elem, void **value)
@@ -1977,6 +1979,10 @@ HudElementStat read_hud_change(lua_State *L, HudElement *elem, void **value)
 		case HUD_STAT_SIZE:
 			elem->size = read_v2s32(L, 4);
 			*value = &elem->size;
+			break;
+		case HUD_STAT_Z_INDEX:
+			elem->z_index = MYMAX(S16_MIN, MYMIN(S16_MAX, luaL_checknumber(L, 4)));
+			*value = &elem->z_index;
 			break;
 	}
 	return stat;

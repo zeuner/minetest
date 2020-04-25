@@ -221,19 +221,13 @@ void Hud::drawItems(v2s32 upperleftpos, v2s32 screen_offset, s32 itemcount,
 	// Store hotbar_image in member variable, used by drawItem()
 	if (hotbar_image != player->hotbar_image) {
 		hotbar_image = player->hotbar_image;
-		if (!hotbar_image.empty())
-			use_hotbar_image = tsrc->isKnownSourceImage(hotbar_image);
-		else
-			use_hotbar_image = false;
+		use_hotbar_image = !hotbar_image.empty();
 	}
 
 	// Store hotbar_selected_image in member variable, used by drawItem()
 	if (hotbar_selected_image != player->hotbar_selected_image) {
 		hotbar_selected_image = player->hotbar_selected_image;
-		if (!hotbar_selected_image.empty())
-			use_hotbar_selected_image = tsrc->isKnownSourceImage(hotbar_selected_image);
-		else
-			use_hotbar_selected_image = false;
+		use_hotbar_selected_image = !hotbar_selected_image.empty();
 	}
 
 	// draw customized item background
@@ -283,10 +277,24 @@ void Hud::drawLuaElements(const v3s16 &camera_offset)
 {
 	u32 text_height = g_fontengine->getTextHeight();
 	irr::gui::IGUIFont* font = g_fontengine->getFont();
+
+	// Reorder elements by z_index
+	std::vector<size_t> ids;
+
 	for (size_t i = 0; i != player->maxHudId(); i++) {
 		HudElement *e = player->getHud(i);
 		if (!e)
 			continue;
+
+		auto it = ids.begin();
+		while (it != ids.end() && player->getHud(*it)->z_index <= e->z_index)
+			++it;
+
+		ids.insert(it, i);
+	}
+
+	for (size_t i : ids) {
+		HudElement *e = player->getHud(i);
 
 		v2s32 pos(floor(e->pos.X * (float) m_screensize.X + 0.5),
 				floor(e->pos.Y * (float) m_screensize.Y + 0.5));
