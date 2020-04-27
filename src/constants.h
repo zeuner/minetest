@@ -22,9 +22,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 /*
 	All kinds of constants.
 
-	Cross-platform compatibility crap should go in porting.h.
+	Cross-platform compatibility stuff should go in porting.h.
 
-    Some things here are legacy crap.
+    Some things here are legacy.
 */
 
 /*
@@ -110,10 +110,5 @@ with this program; if not, write to the Free Software Foundation, Inc.,
     GUI related things
 */
 
-// TODO: implement dpi-based scaling for windows and remove this hack
-#if defined(_WIN32)
-#define TTF_DEFAULT_FONT_SIZE (18)
-#else
 #define TTF_DEFAULT_FONT_SIZE (16)
-#endif
 #define DEFAULT_FONT_SIZE (10)

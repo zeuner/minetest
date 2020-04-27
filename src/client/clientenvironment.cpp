@@ -32,9 +32,64 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "raycast.h"
 #include "voxelalgorithms.h"
 #include "settings.h"
+#include "shader.h"
 #include "content_cao.h"
 #include <algorithm>
 #include "client/renderingengine.h"
+
+/*
+	CAOShaderConstantSetter
+*/
+
+//! Shader constant setter for passing material emissive color to the CAO object_shader
+class CAOShaderConstantSetter : public IShaderConstantSetter
+{
+public:
+	CAOShaderConstantSetter():
+			m_emissive_color_setting("emissiveColor")
+	{}
+
+	~CAOShaderConstantSetter() override = default;
+
+	void onSetConstants(video::IMaterialRendererServices *services,
+			bool is_highlevel) override
+	{
+		if (!is_highlevel)
+			return;
+
+		// Ambient color
+		video::SColorf emissive_color(m_emissive_color);
+
+		float as_array[4] = {
+			emissive_color.r,
+			emissive_color.g,
+			emissive_color.b,
+			emissive_color.a,
+		};
+		m_emissive_color_setting.set(as_array, services);
+	}
+
+	void onSetMaterial(const video::SMaterial& material) override
+	{
+		m_emissive_color = material.EmissiveColor;
+	}
+
+private:
+	video::SColor m_emissive_color;
+	CachedPixelShaderSetting<float, 4> m_emissive_color_setting;
+};
+
+class CAOShaderConstantSetterFactory : public IShaderConstantSetterFactory
+{
+public:
+	CAOShaderConstantSetterFactory()
+	{}
+
+	virtual IShaderConstantSetter* create()
+	{
+		return new CAOShaderConstantSetter();
+	}
+};
 
 /*
 	ClientEnvironment
@@ -47,6 +102,8 @@ ClientEnvironment::ClientEnvironment(ClientMap *map,
 	m_texturesource(texturesource),
 	m_client(client)
 {
+	auto *shdrsrc = m_client->getShaderSource();
+	shdrsrc->addShaderConstantSetterFactory(new CAOShaderConstantSetterFactory());
 }
 
 ClientEnvironment::~ClientEnvironment()
@@ -393,12 +450,29 @@ void ClientEnvironment::addActiveObject(u16 id, u8 type,
 	// Object initialized:
 	if ((obj = getActiveObject(new_id))) {
 		// Final step is to update all children which are already known
-		// Data provided by GENERIC_CMD_SPAWN_INFANT
+		// Data provided by AO_CMD_SPAWN_INFANT
 		const auto &children = obj->getAttachmentChildIds();
 		for (auto c_id : children) {
 			if (auto *o = getActiveObject(c_id))
 				o->updateAttachments();
 		}
+	}
+}
+
+
+void ClientEnvironment::removeActiveObject(u16 id)
+{
+	// Get current attachment childs to detach them visually
+	std::unordered_set<int> attachment_childs;
+	if (auto *obj = getActiveObject(id))
+		attachment_childs = obj->getAttachmentChildIds();
+
+	m_ao_manager.removeObject(id);
+
+	// Perform a proper detach in Irrlicht
+	for (auto c_id : attachment_childs) {
+		if (ClientActiveObject *child = getActiveObject(c_id))
+			child->updateAttachments();
 	}
 }
 

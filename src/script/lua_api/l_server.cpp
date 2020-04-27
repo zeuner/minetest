@@ -163,6 +163,7 @@ int ModApiServer::l_get_player_information(lua_State *L)
 	u16 prot_vers;
 	u8 ser_vers,major,minor,patch;
 	std::string vers_string;
+	std::string lang_code;
 
 #define ERET(code)                                                             \
 	if (!(code)) {                                                             \
@@ -182,7 +183,7 @@ int ModApiServer::l_get_player_information(lua_State *L)
 		&avg_jitter))
 
 	ERET(getServer(L)->getClientInfo(player->getPeerId(), &state, &uptime, &ser_vers,
-		&prot_vers, &major, &minor, &patch, &vers_string))
+		&prot_vers, &major, &minor, &patch, &vers_string, &lang_code))
 
 	lua_newtable(L);
 	int table = lua_gettop(L);
@@ -235,6 +236,10 @@ int ModApiServer::l_get_player_information(lua_State *L)
 
 	lua_pushstring(L, "formspec_version");
 	lua_pushnumber(L, player->formspec_version);
+	lua_settable(L, table);
+
+	lua_pushstring(L, "lang_code");
+	lua_pushstring(L, lang_code.c_str());
 	lua_settable(L, table);
 
 #ifndef NDEBUG
@@ -429,7 +434,7 @@ int ModApiServer::l_get_worldpath(lua_State *L)
 	return 1;
 }
 
-// sound_play(spec, parameters)
+// sound_play(spec, parameters, [ephemeral])
 int ModApiServer::l_sound_play(lua_State *L)
 {
 	NO_MAP_LOCK_REQUIRED;
@@ -437,8 +442,14 @@ int ModApiServer::l_sound_play(lua_State *L)
 	read_soundspec(L, 1, spec);
 	ServerSoundParams params;
 	read_server_sound_params(L, 2, params);
-	s32 handle = getServer(L)->playSound(spec, params);
-	lua_pushinteger(L, handle);
+	bool ephemeral = lua_gettop(L) > 2 && readParam<bool>(L, 3);
+	if (ephemeral) {
+		getServer(L)->playSound(spec, params, true);
+		lua_pushnil(L);
+	} else {
+		s32 handle = getServer(L)->playSound(spec, params);
+		lua_pushinteger(L, handle);
+	}
 	return 1;
 }
 
@@ -446,7 +457,7 @@ int ModApiServer::l_sound_play(lua_State *L)
 int ModApiServer::l_sound_stop(lua_State *L)
 {
 	NO_MAP_LOCK_REQUIRED;
-	int handle = luaL_checkinteger(L, 1);
+	s32 handle = luaL_checkinteger(L, 1);
 	getServer(L)->stopSound(handle);
 	return 0;
 }
