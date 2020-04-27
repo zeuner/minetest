@@ -61,6 +61,10 @@ class ServerScripting;
 class ServerEnvironment;
 struct SimpleSoundSpec;
 struct CloudParams;
+struct SkyboxParams;
+struct SunParams;
+struct MoonParams;
+struct StarParams;
 class ServerThread;
 class ServerModManager;
 
@@ -161,7 +165,6 @@ public:
 	void handleCommand_InventoryAction(NetworkPacket* pkt);
 	void handleCommand_ChatMessage(NetworkPacket* pkt);
 	void handleCommand_Damage(NetworkPacket* pkt);
-	void handleCommand_Password(NetworkPacket* pkt);
 	void handleCommand_PlayerItem(NetworkPacket* pkt);
 	void handleCommand_Respawn(NetworkPacket* pkt);
 	void handleCommand_Interact(NetworkPacket* pkt);
@@ -307,9 +310,11 @@ public:
 			f32 frame_speed);
 	void setPlayerEyeOffset(RemotePlayer *player, const v3f &first, const v3f &third);
 
-	void setSky(RemotePlayer *player, const video::SColor &bgcolor,
-			const std::string &type, const std::vector<std::string> &params,
-			bool &clouds);
+	void setSky(RemotePlayer *player, const SkyboxParams &params);
+	void setSun(RemotePlayer *player, const SunParams &params);
+	void setMoon(RemotePlayer *player, const MoonParams &params);
+	void setStars(RemotePlayer *player, const StarParams &params);
+
 	void setClouds(RemotePlayer *player, const CloudParams &params);
 
 	bool overrideDayNightRatio(RemotePlayer *player, bool do_override, float brightness);
@@ -329,7 +334,7 @@ public:
 	bool getClientConInfo(session_t peer_id, con::rtt_stat_type type, float *retval);
 	bool getClientInfo(session_t peer_id, ClientState *state, u32 *uptime,
 			u8* ser_vers, u16* prot_vers, u8* major, u8* minor, u8* patch,
-			std::string* vers_string);
+			std::string* vers_string, std::string* lang_code);
 
 	void printToConsoleOnly(const std::string &text);
 
@@ -352,6 +357,9 @@ public:
 
 	// Send block to specific player only
 	bool SendBlock(session_t peer_id, const v3s16 &blockpos);
+
+	// Load translations for a language
+	void loadTranslationLanguage(const std::string &lang_code);
 
 	// Bind address
 	Address m_bind_addr;
@@ -413,9 +421,10 @@ private:
 	void SendHUDChange(session_t peer_id, u32 id, HudElementStat stat, void *value);
 	void SendHUDSetFlags(session_t peer_id, u32 flags, u32 mask);
 	void SendHUDSetParam(session_t peer_id, u16 param, const std::string &value);
-	void SendSetSky(session_t peer_id, const video::SColor &bgcolor,
-			const std::string &type, const std::vector<std::string> &params,
-			bool &clouds);
+	void SendSetSky(session_t peer_id, const SkyboxParams &params);
+	void SendSetSun(session_t peer_id, const SunParams &params);
+	void SendSetMoon(session_t peer_id, const MoonParams &params);
+	void SendSetStars(session_t peer_id, const StarParams &params);
 	void SendCloudParams(session_t peer_id, const CloudParams &params);
 	void SendOverrideDayNightRatio(session_t peer_id, bool do_override, float ratio);
 	void broadcastModChannelMessage(const std::string &channel,
