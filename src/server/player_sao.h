@@ -108,10 +108,8 @@ public:
 		Interaction interface
 	*/
 
-	u16 punch(v3f dir,
-		const ToolCapabilities *toolcap,
-		ServerActiveObject *puncher,
-		float time_from_last_punch);
+	u16 punch(v3f dir, const ToolCapabilities *toolcap, ServerActiveObject *puncher,
+			float time_from_last_punch);
 	void rightClick(ServerActiveObject *clicker);
 	void setHP(s32 hp, const PlayerHPChangeReason &reason);
 	void setHPRaw(u16 hp) { m_hp = hp; }
