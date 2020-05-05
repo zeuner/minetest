@@ -111,8 +111,6 @@ void Server::handleCommand_Init(NetworkPacket* pkt)
 
 	if (depl_serial_v == SER_FMT_VER_INVALID) {
 		actionstream << "Server: A mismatched client tried to connect from " <<
-			addr_s << std::endl;
-		infostream << "Server: Cannot negotiate serialization version with " <<
 			addr_s << " client_max=" << (int)client_max << std::endl;
 		DenyAccess(peer_id, SERVER_ACCESSDENIED_WRONG_VERSION);
 		return;
@@ -911,8 +909,8 @@ bool Server::checkInteractDistance(RemotePlayer *player, const f32 d, const std:
 		actionstream << "Player " << player->getName()
 				<< " tried to access " << what
 				<< " from too far: "
-				<< "d=" << d <<", max_d=" << max_d
-				<< ". ignoring." << std::endl;
+				<< "d=" << d << ", max_d=" << max_d
+				<< "; ignoring." << std::endl;
 		// Call callbacks
 		m_script->on_cheat(player->getPlayerSAO(), "interacted_too_far");
 		return false;
@@ -965,7 +963,7 @@ void Server::handleCommand_Interact(NetworkPacket *pkt)
 	}
 
 	if (playersao->isDead()) {
-		actionstream << "Server: NoCheat: " << player->getName()
+		actionstream << "Server: " << player->getName()
 				<< " tried to interact while dead; ignoring." << std::endl;
 		if (pointed.type == POINTEDTHING_NODE) {
 			// Re-send block to revert change on client-side
@@ -1154,7 +1152,7 @@ void Server::handleCommand_Interact(NetworkPacket *pkt)
 				playersao->noCheatDigEnd();
 				// If player didn't start digging this, ignore dig
 				if (nocheat_p != p_under) {
-					infostream << "Server: NoCheat: " << player->getName()
+					infostream << "Server: " << player->getName()
 							<< " started digging "
 							<< PP(nocheat_p) << " and completed digging "
 							<< PP(p_under) << "; not digging." << std::endl;
@@ -1178,9 +1176,9 @@ void Server::handleCommand_Interact(NetworkPacket *pkt)
 				}
 				// If can't dig, ignore dig
 				if (!params.diggable) {
-					infostream << "Server: NoCheat: " << player->getName()
+					infostream << "Server: " << player->getName()
 							<< " completed digging " << PP(p_under)
-							<< ", which is not diggable with tool. not digging."
+							<< ", which is not diggable with tool; not digging."
 							<< std::endl;
 					is_valid_dig = false;
 					// Call callbacks
@@ -1204,7 +1202,7 @@ void Server::handleCommand_Interact(NetworkPacket *pkt)
 				}
 				// Dig not possible
 				else {
-					infostream << "Server: NoCheat: " << player->getName()
+					infostream << "Server: " << player->getName()
 							<< " completed digging " << PP(p_under)
 							<< "too fast; not digging." << std::endl;
 					is_valid_dig = false;

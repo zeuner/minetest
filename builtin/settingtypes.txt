@@ -252,7 +252,7 @@ keymap_cinematic (Cinematic mode key) key
 
 #    Key for toggling display of minimap.
 #    See http://irrlicht.sourceforge.net/docu/namespaceirr.html#a54da2a0e231901735e3da1b0edf72eb3
-keymap_minimap (Minimap key) key KEY_F9
+keymap_minimap (Minimap key) key KEY_KEY_V
 
 #    Key for taking screenshots.
 #    See http://irrlicht.sourceforge.net/docu/namespaceirr.html#a54da2a0e231901735e3da1b0edf72eb3
@@ -424,7 +424,7 @@ keymap_toggle_profiler (Profiler toggle key) key KEY_F6
 
 #    Key for switching between first- and third-person camera.
 #    See http://irrlicht.sourceforge.net/docu/namespaceirr.html#a54da2a0e231901735e3da1b0edf72eb3
-keymap_camera_mode (Toggle camera mode key) key KEY_F7
+keymap_camera_mode (Toggle camera mode key) key KEY_KEY_C
 
 #    Key for increasing the viewing range.
 #    See http://irrlicht.sourceforge.net/docu/namespaceirr.html#a54da2a0e231901735e3da1b0edf72eb3
@@ -2120,9 +2120,6 @@ emergequeue_limit_diskonly (Limit of emerge queues on disk) int 64
 emergequeue_limit_generate (Limit of emerge queues to generate) int 64
 
 #    Number of emerge threads to use.
-#    WARNING: Currently there are multiple bugs that may cause crashes when
-#    'num_emerge_threads' is larger than 1. Until this warning is removed it is
-#    strongly recommended this value is set to the default '1'.
 #    Value 0:
 #    -    Automatic selection. The number of emerge threads will be
 #    -    'number of processors - 2', with a lower limit of 1.

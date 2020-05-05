@@ -1275,7 +1275,7 @@ int ObjectRef::l_set_look_yaw(lua_State *L)
 	return 1;
 }
 
-// set_fov(self, degrees[, is_multiplier])
+// set_fov(self, degrees[, is_multiplier, transition_time])
 int ObjectRef::l_set_fov(lua_State *L)
 {
 	NO_MAP_LOCK_REQUIRED;
@@ -1284,7 +1284,11 @@ int ObjectRef::l_set_fov(lua_State *L)
 	if (!player)
 		return 0;
 
-	player->setFov({ static_cast<f32>(luaL_checknumber(L, 2)), readParam<bool>(L, 3) });
+	player->setFov({
+		static_cast<f32>(luaL_checknumber(L, 2)),
+		readParam<bool>(L, 3, false),
+		lua_isnumber(L, 4) ? static_cast<f32>(luaL_checknumber(L, 4)) : 0.0f
+	});
 	getServer(L)->SendPlayerFov(player->getPeerId());
 
 	return 0;
@@ -1302,8 +1306,9 @@ int ObjectRef::l_get_fov(lua_State *L)
 	PlayerFovSpec fov_spec = player->getFov();
 	lua_pushnumber(L, fov_spec.fov);
 	lua_pushboolean(L, fov_spec.is_multiplier);
+	lua_pushnumber(L, fov_spec.transition_time);
 
-	return 2;
+	return 3;
 }
 
 // set_breath(self, breath)
@@ -1803,19 +1808,19 @@ int ObjectRef::l_set_sky(lua_State *L)
 			lua_pop(L, 1);
 
 			// Prevent flickering clouds at dawn/dusk:
-			skybox_params.sun_tint = video::SColor(255, 255, 255, 255);
+			skybox_params.fog_sun_tint = video::SColor(255, 255, 255, 255);
 			lua_getfield(L, -1, "fog_sun_tint");
-			read_color(L, -1, &skybox_params.sun_tint);
+			read_color(L, -1, &skybox_params.fog_sun_tint);
 			lua_pop(L, 1);
 
-			skybox_params.moon_tint = video::SColor(255, 255, 255, 255);
+			skybox_params.fog_moon_tint = video::SColor(255, 255, 255, 255);
 			lua_getfield(L, -1, "fog_moon_tint");
-			read_color(L, -1, &skybox_params.moon_tint);
+			read_color(L, -1, &skybox_params.fog_moon_tint);
 			lua_pop(L, 1);
 
 			lua_getfield(L, -1, "fog_tint_type");
 			if (!lua_isnil(L, -1))
-				skybox_params.tint_type = luaL_checkstring(L, -1);
+				skybox_params.fog_tint_type = luaL_checkstring(L, -1);
 			lua_pop(L, 1);
 
 			// Because we need to leave the "sky_color" table.
@@ -1933,12 +1938,12 @@ int ObjectRef::l_get_sky_color(lua_State *L)
 		push_ARGB8(L, skybox_params.sky_color.indoors);
 		lua_setfield(L, -2, "indoors");
 	}
-	push_ARGB8(L, skybox_params.sun_tint);
-	lua_setfield(L, -2, "sun_tint");
-	push_ARGB8(L, skybox_params.moon_tint);
-	lua_setfield(L, -2, "moon_tint");
-	lua_pushstring(L, skybox_params.tint_type.c_str());
-	lua_setfield(L, -2, "tint_type");
+	push_ARGB8(L, skybox_params.fog_sun_tint);
+	lua_setfield(L, -2, "fog_sun_tint");
+	push_ARGB8(L, skybox_params.fog_moon_tint);
+	lua_setfield(L, -2, "fog_moon_tint");
+	lua_pushstring(L, skybox_params.fog_tint_type.c_str());
+	lua_setfield(L, -2, "fog_tint_type");
 	return 1;
 }
 

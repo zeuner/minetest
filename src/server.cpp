@@ -1770,8 +1770,8 @@ void Server::SendSetSky(session_t peer_id, const SkyboxParams &params)
 		pkt << params.clouds;
 	} else { // Handle current clients and future clients
 		pkt << params.bgcolor << params.type
-		<< params.clouds << params.sun_tint
-		<< params.moon_tint << params.tint_type;
+		<< params.clouds << params.fog_sun_tint
+		<< params.fog_moon_tint << params.fog_tint_type;
 
 		if (params.type == "skybox") {
 			pkt << (u16) params.textures.size();
@@ -1892,10 +1892,10 @@ void Server::SendMovePlayer(session_t peer_id)
 
 void Server::SendPlayerFov(session_t peer_id)
 {
-	NetworkPacket pkt(TOCLIENT_FOV, 4 + 1, peer_id);
+	NetworkPacket pkt(TOCLIENT_FOV, 4 + 1 + 4, peer_id);
 
 	PlayerFovSpec fov_spec = m_env->getPlayer(peer_id)->getFov();
-	pkt << fov_spec.fov << fov_spec.is_multiplier;
+	pkt << fov_spec.fov << fov_spec.is_multiplier << fov_spec.transition_time;
 
 	Send(&pkt);
 }
