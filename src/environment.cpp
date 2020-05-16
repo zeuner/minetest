@@ -21,7 +21,6 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "environment.h"
 #include "collision.h"
 #include "raycast.h"
-#include "serverobject.h"
 #include "scripting_server.h"
 #include "server.h"
 #include "daynightratio.h"
@@ -81,6 +80,24 @@ float Environment::getTimeOfDayF()
 {
 	MutexAutoLock lock(this->m_time_lock);
 	return m_time_of_day_f;
+}
+
+bool Environment::line_of_sight(v3f pos1, v3f pos2, v3s16 *p)
+{
+	// Iterate trough nodes on the line
+	voxalgo::VoxelLineIterator iterator(pos1 / BS, (pos2 - pos1) / BS);
+	do {
+		MapNode n = getMap().getNode(iterator.m_current_node_pos);
+
+		// Return non-air
+		if (n.param0 != CONTENT_AIR) {
+			if (p)
+				*p = iterator.m_current_node_pos;
+			return false;
+		}
+		iterator.next();
+	} while (iterator.m_current_index <= iterator.m_last_index);
+	return true;
 }
 
 /*
@@ -159,7 +176,7 @@ void Environment::continueRaycast(RaycastState *state, PointedThing *result)
 			v3s16 np(x, y, z);
 			bool is_valid_position;
 
-			n = map.getNodeNoEx(np, &is_valid_position);
+			n = map.getNode(np, &is_valid_position);
 			if (!(is_valid_position && isPointableNode(n, nodedef,
 					state->m_liquids_pointable))) {
 				continue;
@@ -175,12 +192,12 @@ void Environment::continueRaycast(RaycastState *state, PointedThing *result)
 			bool is_colliding = false;
 			// Minimal distance of all collisions
 			float min_distance_sq = 10000000;
+			// ID of the current box (loop counter)
+			u16 id = 0;
 
 			v3f npf = intToFloat(np, BS);
-			for (std::vector<aabb3f>::const_iterator i = boxes.begin();
-					i != boxes.end(); ++i) {
-				// Get current collision box
-				aabb3f box = *i;
+			// This loop translates the boxes to their in-world place.
+			for (aabb3f &box : boxes) {
 				box.MinEdge += npf;
 				box.MaxEdge += npf;
 
@@ -188,8 +205,10 @@ void Environment::continueRaycast(RaycastState *state, PointedThing *result)
 				v3s16 intersection_normal;
 				if (!boxLineCollision(box, state->m_shootline.start,
 						state->m_shootline.getVector(), &intersection_point,
-						&intersection_normal))
+						&intersection_normal)) {
+					++id;
 					continue;
+				}
 
 				f32 distanceSq = (intersection_point
 					- state->m_shootline.start).getLengthSQ();
@@ -198,9 +217,11 @@ void Environment::continueRaycast(RaycastState *state, PointedThing *result)
 					min_distance_sq = distanceSq;
 					result.intersection_point = intersection_point;
 					result.intersection_normal = intersection_normal;
+					result.box_id = id;
 					found_boxcenter = box.getCenter();
 					is_colliding = true;
 				}
+				++id;
 			}
 			// If there wasn't a collision, stop
 			if (!is_colliding) {

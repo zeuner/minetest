@@ -26,6 +26,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "modchannels.h"
 #include "content/mods.h"
 #include "util/numeric.h"
+#include "porting.h"
 
 content_t t_CONTENT_STONE;
 content_t t_CONTENT_GRASS;
@@ -323,7 +324,7 @@ std::string TestBase::getTestTempDirectory()
 		return m_test_dir;
 
 	char buf[32];
-	snprintf(buf, sizeof(buf), "%08X", myrand());
+	porting::mt_snprintf(buf, sizeof(buf), "%08X", myrand());
 
 	m_test_dir = fs::TempPath() + DIR_DELIM "mttest_" + buf;
 	if (!fs::CreateDir(m_test_dir))
@@ -335,7 +336,7 @@ std::string TestBase::getTestTempDirectory()
 std::string TestBase::getTestTempFile()
 {
 	char buf[32];
-	snprintf(buf, sizeof(buf), "%08X", myrand());
+	porting::mt_snprintf(buf, sizeof(buf), "%08X", myrand());
 
 	return getTestTempDirectory() + DIR_DELIM + buf + ".tmp";
 }
@@ -649,12 +650,12 @@ struct TestMapSector: public TestBase
 		// Create one with no heightmaps
 		ServerMapSector sector(&parent, v2s16(1,1));
 
-		UASSERT(sector.getBlockNoCreateNoEx(0) == 0);
-		UASSERT(sector.getBlockNoCreateNoEx(1) == 0);
+		UASSERT(sector.getBlockNoCreateNoEx(0) == nullptr);
+		UASSERT(sector.getBlockNoCreateNoEx(1) == nullptr);
 
 		MapBlock * bref = sector.createBlankBlock(-2);
 
-		UASSERT(sector.getBlockNoCreateNoEx(0) == 0);
+		UASSERT(sector.getBlockNoCreateNoEx(0) == nullptr);
 		UASSERT(sector.getBlockNoCreateNoEx(-2) == bref);
 
 		//TODO: Check for AlreadyExistsException

@@ -42,6 +42,8 @@ enum BiomeType {
 
 class Biome : public ObjDef, public NodeResolver {
 public:
+	ObjDef *clone() const;
+
 	u32 flags;
 
 	content_t c_top;
@@ -52,7 +54,7 @@ public:
 	content_t c_river_water;
 	content_t c_riverbed;
 	content_t c_dust;
-	content_t c_cave_liquid;
+	std::vector<content_t> c_cave_liquid;
 	content_t c_dungeon;
 	content_t c_dungeon_alt;
 	content_t c_dungeon_stair;
@@ -88,6 +90,7 @@ struct BiomeParams {
 	s32 seed;
 };
 
+// WARNING: this class is not thread-safe
 class BiomeGen {
 public:
 	virtual ~BiomeGen() = default;
@@ -191,6 +194,8 @@ public:
 	BiomeManager(Server *server);
 	virtual ~BiomeManager() = default;
 
+	BiomeManager *clone() const;
+
 	const char *getObjectTitle() const
 	{
 		return "biome";
@@ -226,12 +231,15 @@ public:
 
 	// For BiomeGen type 'BiomeGenOriginal'
 	float getHeatAtPosOriginal(v3s16 pos, NoiseParams &np_heat,
-		NoiseParams &np_heat_blend, u64 seed);
+		NoiseParams &np_heat_blend, u64 seed) const;
 	float getHumidityAtPosOriginal(v3s16 pos, NoiseParams &np_humidity,
-		NoiseParams &np_humidity_blend, u64 seed);
-	Biome *getBiomeFromNoiseOriginal(float heat, float humidity, v3s16 pos);
+		NoiseParams &np_humidity_blend, u64 seed) const;
+	const Biome *getBiomeFromNoiseOriginal(float heat, float humidity,
+		v3s16 pos) const;
 
 private:
+	BiomeManager() {};
+
 	Server *m_server;
 
 };

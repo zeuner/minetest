@@ -50,6 +50,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "util/string.h"
 #include "settings.h"
 #include <list>
+#include <cstdarg>
+#include <cstdio>
 
 namespace porting
 {
@@ -378,20 +380,27 @@ bool setSystemPaths()
 		"Failed to get current executable path");
 	pathRemoveFile(buf, '\\');
 
-	// Use ".\bin\.."
-	path_share = std::string(buf) + "\\..";
+	std::string exepath(buf);
 
-	// Use "C:\Documents and Settings\user\Application Data\<PROJECT_NAME>"
+	// Use ".\bin\.."
+	path_share = exepath + "\\..";
+	if (detectMSVCBuildDir(exepath)) {
+		// The msvc build dir schould normaly not be present if properly installed,
+		// but its usefull for debugging.
+		path_share += DIR_DELIM "..";
+	}
+
+	// Use "C:\Users\<user>\AppData\Roaming\<PROJECT_NAME_C>"
 	DWORD len = GetEnvironmentVariable("APPDATA", buf, sizeof(buf));
 	FATAL_ERROR_IF(len == 0 || len > sizeof(buf), "Failed to get APPDATA");
 
-	path_user = std::string(buf) + DIR_DELIM + PROJECT_NAME;
+	path_user = std::string(buf) + DIR_DELIM + PROJECT_NAME_C;
 	return true;
 }
 
 
 //// Linux
-#elif defined(__linux__)
+#elif defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
 
 bool setSystemPaths()
 {
@@ -559,6 +568,10 @@ void initializePaths()
 	if (!setSystemPaths())
 		errorstream << "Failed to get one or more system-wide path" << std::endl;
 
+
+#  ifdef _WIN32
+	path_cache = path_user + DIR_DELIM + "cache";
+#  else
 	// Initialize path_cache
 	// First try $XDG_CACHE_HOME/PROJECT_NAME
 	const char *cache_dir = getenv("XDG_CACHE_HOME");
@@ -575,7 +588,8 @@ void initializePaths()
 	}
 	// Migrate cache folder to new location if possible
 	migrateCachePath();
-#endif
+#  endif // _WIN32
+#endif // RUN_IN_PLACE
 
 	infostream << "Detected share path: " << path_share << std::endl;
 	infostream << "Detected user path: " << path_user << std::endl;
@@ -584,18 +598,18 @@ void initializePaths()
 #if USE_GETTEXT
 	bool found_localedir = false;
 #  ifdef STATIC_LOCALEDIR
-	if (STATIC_LOCALEDIR[0] && fs::PathExists(STATIC_LOCALEDIR)) {
+	/* STATIC_LOCALEDIR may be a generalized path such as /usr/share/locale that
+	 * doesn't necessarily contain our locale files, so check data path first. */
+	path_locale = getDataPath("locale");
+	if (fs::PathExists(path_locale)) {
+		found_localedir = true;
+		infostream << "Using in-place locale directory " << path_locale
+			<< " even though a static one was provided." << std::endl;
+	} else if (STATIC_LOCALEDIR[0] && fs::PathExists(STATIC_LOCALEDIR)) {
 		found_localedir = true;
 		path_locale = STATIC_LOCALEDIR;
-		infostream << "Using locale directory " << STATIC_LOCALEDIR << std::endl;
-	} else {
-		path_locale = getDataPath("locale");
-		if (fs::PathExists(path_locale)) {
-			found_localedir = true;
-			infostream << "Using in-place locale directory " << path_locale
-				<< " even though a static one was provided "
-				<< "(RUN_IN_PLACE or CUSTOM_LOCALEDIR)." << std::endl;
-		}
+		infostream << "Using static locale directory " << STATIC_LOCALEDIR
+			<< std::endl;
 	}
 #  else
 	path_locale = getDataPath("locale");
@@ -659,6 +673,28 @@ void attachOrCreateConsole()
 		consoleAllocated = true;
 	}
 #endif
+}
+
+int mt_snprintf(char *buf, const size_t buf_size, const char *fmt, ...)
+{
+	// https://msdn.microsoft.com/en-us/library/bt7tawza.aspx
+	//  Many of the MSVC / Windows printf-style functions do not support positional
+	//  arguments (eg. "%1$s"). We just forward the call to vsnprintf for sane
+	//  platforms, but defer to _vsprintf_p on MSVC / Windows.
+	// https://github.com/FFmpeg/FFmpeg/blob/5ae9fa13f5ac640bec113120d540f70971aa635d/compat/msvcrt/snprintf.c#L46
+	//  _vsprintf_p has to be shimmed with _vscprintf_p on -1 (for an example see
+	//  above FFmpeg link).
+	va_list args;
+	va_start(args, fmt);
+#ifndef _MSC_VER
+	int c = vsnprintf(buf, buf_size, fmt, args);
+#else  // _MSC_VER
+	int c = _vsprintf_p(buf, buf_size, fmt, args);
+	if (c == -1)
+		c = _vscprintf_p(fmt, args);
+#endif // _MSC_VER
+	va_end(args);
+	return c;
 }
 
 // Load performance counter frequency only once at startup

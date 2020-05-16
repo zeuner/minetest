@@ -28,6 +28,7 @@ struct InventoryLocation;
 struct ItemStack;
 struct ToolCapabilities;
 struct PlayerHPChangeReason;
+class ServerActiveObject;
 
 class ScriptApiPlayer : virtual public ScriptApiBase
 {
@@ -46,7 +47,7 @@ public:
 	bool on_punchplayer(ServerActiveObject *player, ServerActiveObject *hitter,
 			float time_from_last_punch, const ToolCapabilities *toolcap,
 			v3f dir, s16 damage);
-	s16 on_player_hpchange(ServerActiveObject *player, s16 hp_change,
+	s32 on_player_hpchange(ServerActiveObject *player, s32 hp_change,
 			const PlayerHPChangeReason &reason);
 	void on_playerReceiveFields(ServerActiveObject *player,
 			const std::string &formname, const StringMap &fields);

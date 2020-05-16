@@ -122,7 +122,7 @@ int MetaDataRef::l_set_string(lua_State *L)
 		return 0;
 
 	meta->setString(name, str);
-	ref->reportMetadataChange();
+	ref->reportMetadataChange(&name);
 	return 0;
 }
 
@@ -153,14 +153,16 @@ int MetaDataRef::l_set_int(lua_State *L)
 	MetaDataRef *ref = checkobject(L, 1);
 	std::string name = luaL_checkstring(L, 2);
 	int a = luaL_checkint(L, 3);
-	std::string str = itos(a);
+	std::string str;
+	if (a != 0)
+		str = itos(a);
 
 	Metadata *meta = ref->getmeta(true);
 	if (meta == NULL || str == meta->getString(name))
 		return 0;
 
 	meta->setString(name, str);
-	ref->reportMetadataChange();
+	ref->reportMetadataChange(&name);
 	return 0;
 }
 
@@ -191,14 +193,16 @@ int MetaDataRef::l_set_float(lua_State *L)
 	MetaDataRef *ref = checkobject(L, 1);
 	std::string name = luaL_checkstring(L, 2);
 	float a = readParam<float>(L, 3);
-	std::string str = ftos(a);
+	std::string str;
+	if (a != 0)
+		str = ftos(a);
 
 	Metadata *meta = ref->getmeta(true);
 	if (meta == NULL || str == meta->getString(name))
 		return 0;
 
 	meta->setString(name, str);
-	ref->reportMetadataChange();
+	ref->reportMetadataChange(&name);
 	return 0;
 }
 

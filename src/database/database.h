@@ -19,6 +19,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #pragma once
 
+#include <set>
 #include <string>
 #include <vector>
 #include "irr_v3d.h"
@@ -31,6 +32,7 @@ public:
 	virtual void beginSave() = 0;
 	virtual void endSave() = 0;
 	virtual bool initialized() const { return true; }
+	virtual void pingDatabase() {}
 };
 
 class MapDatabase : public Database
@@ -56,8 +58,33 @@ class PlayerDatabase
 public:
 	virtual ~PlayerDatabase() = default;
 
+	virtual void pingDatabase() {}
+
 	virtual void savePlayer(RemotePlayer *player) = 0;
 	virtual bool loadPlayer(RemotePlayer *player, PlayerSAO *sao) = 0;
 	virtual bool removePlayer(const std::string &name) = 0;
 	virtual void listPlayers(std::vector<std::string> &res) = 0;
+};
+
+struct AuthEntry
+{
+	u64 id;
+	std::string name;
+	std::string password;
+	std::vector<std::string> privileges;
+	s64 last_login;
+};
+
+class AuthDatabase
+{
+public:
+	virtual ~AuthDatabase() = default;
+
+	virtual bool getAuth(const std::string &name, AuthEntry &res) = 0;
+	virtual bool saveAuth(const AuthEntry &authEntry) = 0;
+	virtual bool createAuth(AuthEntry &authEntry) = 0;
+	virtual bool deleteAuth(const std::string &name) = 0;
+	virtual void listNames(std::vector<std::string> &res) = 0;
+	virtual void reload() = 0;
+	virtual void pingDatabase() {}
 };

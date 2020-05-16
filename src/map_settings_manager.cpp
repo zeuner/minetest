@@ -174,10 +174,20 @@ MapgenParams *MapSettingsManager::makeMapgenParams()
 
 	// Create our MapgenParams
 	MapgenParams *params = Mapgen::createMapgenParams(mgtype);
-	if (params == NULL)
-		return NULL;
+	if (!params)
+		return nullptr;
 
 	params->mgtype = mgtype;
+
+	// Load the mapgen param defaults
+	/* FIXME: Why is it done like this? MapgenParams should just
+	 * set the defaults in its constructor instead. */
+	{
+		Settings default_settings;
+		Mapgen::setDefaultSettings(&default_settings);
+		params->MapgenParams::readParams(&default_settings);
+		params->readParams(&default_settings);
+	}
 
 	// Load the rest of the mapgen params from our active settings
 	params->MapgenParams::readParams(m_user_settings);

@@ -42,7 +42,6 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "profiler.h"
 #include "scripting_server.h"
 #include "server.h"
-#include "serverobject.h"
 #include "settings.h"
 #include "voxel.h"
 
@@ -110,6 +109,28 @@ private:
 	VoxelArea *m_ignorevariable;
 };
 
+EmergeParams::~EmergeParams()
+{
+	infostream << "EmergeParams: destroying " << this << std::endl;
+	// Delete everything that was cloned on creation of EmergeParams
+	delete biomemgr;
+	delete oremgr;
+	delete decomgr;
+	delete schemmgr;
+}
+
+EmergeParams::EmergeParams(EmergeManager *parent, const BiomeManager *biomemgr,
+	const OreManager *oremgr, const DecorationManager *decomgr,
+	const SchematicManager *schemmgr) :
+	ndef(parent->ndef),
+	enable_mapgen_debug_info(parent->enable_mapgen_debug_info),
+	gen_notify_on(parent->gen_notify_on),
+	gen_notify_on_deco_ids(&parent->gen_notify_on_deco_ids),
+	biomemgr(biomemgr->clone()), oremgr(oremgr->clone()),
+	decomgr(decomgr->clone()), schemmgr(schemmgr->clone())
+{
+}
+
 ////
 //// EmergeManager
 ////
@@ -128,10 +149,11 @@ EmergeManager::EmergeManager(Server *server)
 
 	enable_mapgen_debug_info = g_settings->getBool("enable_mapgen_debug_info");
 
-	// If unspecified, leave a proc for the main thread and one for
+	s16 nthreads = 1;
+	g_settings->getS16NoEx("num_emerge_threads", nthreads);
+	// If automatic, leave a proc for the main thread and one for
 	// some other misc thread
-	s16 nthreads = 0;
-	if (!g_settings->getS16NoEx("num_emerge_threads", nthreads))
+	if (nthreads == 0)
 		nthreads = Thread::getNumberOfProcessors() - 2;
 	if (nthreads < 1)
 		nthreads = 1;
@@ -182,33 +204,63 @@ EmergeManager::~EmergeManager()
 }
 
 
-bool EmergeManager::initMapgens(MapgenParams *params)
+BiomeManager *EmergeManager::getWritableBiomeManager()
 {
-	if (!m_mapgens.empty())
-		return false;
+	FATAL_ERROR_IF(!m_mapgens.empty(),
+		"Writable managers can only be returned before mapgen init");
+	return biomemgr;
+}
 
-	this->mgparams = params;
+OreManager *EmergeManager::getWritableOreManager()
+{
+	FATAL_ERROR_IF(!m_mapgens.empty(),
+		"Writable managers can only be returned before mapgen init");
+	return oremgr;
+}
+
+DecorationManager *EmergeManager::getWritableDecorationManager()
+{
+	FATAL_ERROR_IF(!m_mapgens.empty(),
+		"Writable managers can only be returned before mapgen init");
+	return decomgr;
+}
+
+SchematicManager *EmergeManager::getWritableSchematicManager()
+{
+	FATAL_ERROR_IF(!m_mapgens.empty(),
+		"Writable managers can only be returned before mapgen init");
+	return schemmgr;
+}
+
+
+void EmergeManager::initMapgens(MapgenParams *params)
+{
+	FATAL_ERROR_IF(!m_mapgens.empty(), "Mapgen already initialised.");
+
+	mgparams = params;
 
 	for (u32 i = 0; i != m_threads.size(); i++) {
-		Mapgen *mg = Mapgen::createMapgen(params->mgtype, i, params, this);
-		m_mapgens.push_back(mg);
+		EmergeParams *p = new EmergeParams(
+			this, biomemgr, oremgr, decomgr, schemmgr);
+		infostream << "EmergeManager: Created params " << p
+			<< " for thread " << i << std::endl;
+		m_mapgens.push_back(Mapgen::createMapgen(params->mgtype, params, p));
 	}
-
-	return true;
 }
 
 
 Mapgen *EmergeManager::getCurrentMapgen()
 {
 	if (!m_threads_active)
-		return NULL;
+		return nullptr;
 
 	for (u32 i = 0; i != m_threads.size(); i++) {
-		if (m_threads[i]->isCurrentThread())
-			return m_threads[i]->m_mapgen;
+		EmergeThread *t = m_threads[i];
+		if (t->isRunning() && t->isCurrentThread())
+			return t->m_mapgen;
 	}
 
-	return NULL;
+	return nullptr;
 }
 
 
@@ -591,8 +643,7 @@ MapBlock *EmergeThread::finishGen(v3s16 pos, BlockMakeData *bmdata,
 	/*
 		Clear generate notifier events
 	*/
-	Mapgen *mg = m_emerge->getCurrentMapgen();
-	mg->gennotify.clearEvents();
+	m_mapgen->gennotify.clearEvents();
 
 	EMERGE_DBG_OUT("ended up with: " << analyze_block(block));
 
@@ -640,12 +691,8 @@ void *EmergeThread::run()
 			{
 				ScopeProfiler sp(g_profiler,
 					"EmergeThread: Mapgen::makeChunk", SPT_AVG);
-				TimeTaker t("mapgen::make_block()");
 
 				m_mapgen->makeChunk(&bmdata);
-
-				if (!enable_mapgen_debug_info)
-					t.stop(true); // Hide output
 			}
 
 			block = finishGen(pos, &bmdata, &modified_blocks);

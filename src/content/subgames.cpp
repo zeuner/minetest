@@ -23,7 +23,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "settings.h"
 #include "log.h"
 #include "util/strfnd.h"
-#include "defaultsettings.h" // for override_default_settings
+#include "defaultsettings.h" // for set_default_settings
 #include "mapgen/mapgen.h"   // for MapgenParams
 #include "util/string.h"
 
@@ -67,15 +67,19 @@ SubgameSpec findSubgame(const std::string &id)
 	std::vector<GameFindPath> find_paths;
 	while (!search_paths.at_end()) {
 		std::string path = search_paths.next(PATH_DELIM);
-		find_paths.emplace_back(path + DIR_DELIM + id, false);
-		find_paths.emplace_back(path + DIR_DELIM + id + "_game", false);
+		path.append(DIR_DELIM).append(id);
+		find_paths.emplace_back(path, false);
+		path.append("_game");
+		find_paths.emplace_back(path, false);
 	}
-	find_paths.emplace_back(
-			user + DIR_DELIM + "games" + DIR_DELIM + id + "_game", true);
-	find_paths.emplace_back(user + DIR_DELIM + "games" + DIR_DELIM + id, true);
-	find_paths.emplace_back(
-			share + DIR_DELIM + "games" + DIR_DELIM + id + "_game", false);
-	find_paths.emplace_back(share + DIR_DELIM + "games" + DIR_DELIM + id, false);
+
+	std::string game_base = DIR_DELIM;
+	game_base = game_base.append("games").append(DIR_DELIM).append(id);
+	std::string game_suffixed = game_base + "_game";
+	find_paths.emplace_back(user + game_suffixed, true);
+	find_paths.emplace_back(user + game_base, true);
+	find_paths.emplace_back(share + game_suffixed, false);
+	find_paths.emplace_back(share + game_base, false);
 
 	// Find game directory
 	std::string game_path;
@@ -195,6 +199,7 @@ std::vector<SubgameSpec> getAvailableGames()
 {
 	std::vector<SubgameSpec> specs;
 	std::set<std::string> gameids = getAvailableGameIds();
+	specs.reserve(gameids.size());
 	for (const auto &gameid : gameids)
 		specs.push_back(findSubgame(gameid));
 	return specs;
@@ -248,7 +253,7 @@ std::vector<WorldSpec> getAvailableWorlds()
 	worldspaths.insert(porting::path_user + DIR_DELIM + "worlds");
 	infostream << "Searching worlds..." << std::endl;
 	for (const std::string &worldspath : worldspaths) {
-		infostream << "  In " << worldspath << ": " << std::endl;
+		infostream << "  In " << worldspath << ": ";
 		std::vector<fs::DirListNode> dirvector = fs::GetDirListing(worldspath);
 		for (const fs::DirListNode &dln : dirvector) {
 			if (!dln.dir)
@@ -293,7 +298,7 @@ bool loadGameConfAndInitWorld(const std::string &path, const SubgameSpec &gamesp
 	set_default_settings(g_settings);
 	Settings game_defaults;
 	getGameMinetestConfig(gamespec.path, game_defaults);
-	override_default_settings(g_settings, &game_defaults);
+	g_settings->overrideDefaults(&game_defaults);
 
 	infostream << "Initializing world at " << path << std::endl;
 
@@ -307,6 +312,7 @@ bool loadGameConfAndInitWorld(const std::string &path, const SubgameSpec &gamesp
 		conf.set("gameid", gamespec.id);
 		conf.set("backend", "sqlite3");
 		conf.set("player_backend", "sqlite3");
+		conf.set("auth_backend", "sqlite3");
 		conf.setBool("creative_mode", g_settings->getBool("creative_mode"));
 		conf.setBool("enable_damage", g_settings->getBool("enable_damage"));
 

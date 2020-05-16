@@ -43,12 +43,21 @@ SchematicManager::SchematicManager(Server *server) :
 }
 
 
+SchematicManager *SchematicManager::clone() const
+{
+	auto mgr = new SchematicManager();
+	assert(mgr);
+	ObjDefManager::cloneTo(mgr);
+	return mgr;
+}
+
+
 void SchematicManager::clear()
 {
 	EmergeManager *emerge = m_server->getEmergeManager();
 
 	// Remove all dangling references in Decorations
-	DecorationManager *decomgr = emerge->decomgr;
+	DecorationManager *decomgr = emerge->getWritableDecorationManager();
 	for (size_t i = 0; i != decomgr->getNumObjects(); i++) {
 		Decoration *deco = (Decoration *)decomgr->getRaw(i);
 
@@ -77,6 +86,25 @@ Schematic::~Schematic()
 	delete []slice_probs;
 }
 
+ObjDef *Schematic::clone() const
+{
+	auto def = new Schematic();
+	ObjDef::cloneTo(def);
+	NodeResolver::cloneTo(def);
+
+	def->c_nodes = c_nodes;
+	def->flags = flags;
+	def->size = size;
+	FATAL_ERROR_IF(!schemdata, "Schematic can only be cloned after loading");
+	u32 nodecount = size.X * size.Y * size.Z;
+	def->schemdata = new MapNode[nodecount];
+	memcpy(def->schemdata, schemdata, sizeof(MapNode) * nodecount);
+	def->slice_probs = new u8[size.Y];
+	memcpy(def->slice_probs, slice_probs, sizeof(u8) * size.Y);
+
+	return def;
+}
+
 
 void Schematic::resolveNodeNames()
 {
@@ -93,6 +121,7 @@ void Schematic::resolveNodeNames()
 
 void Schematic::blitToVManip(MMVManip *vm, v3s16 p, Rotation rot, bool force_place)
 {
+	assert(schemdata && slice_probs);
 	sanity_check(m_ndef != NULL);
 
 	int xstride = 1;
@@ -137,8 +166,8 @@ void Schematic::blitToVManip(MMVManip *vm, v3s16 p, Rotation rot, bool force_pla
 		for (s16 z = 0; z != sz; z++) {
 			u32 i = z * i_step_z + y * ystride + i_start;
 			for (s16 x = 0; x != sx; x++, i += i_step_x) {
-				u32 vi = vm->m_area.index(p.X + x, y_map, p.Z + z);
-				if (!vm->m_area.contains(vi))
+				v3s16 pos(p.X + x, y_map, p.Z + z);
+				if (!vm->m_area.contains(pos))
 					continue;
 
 				if (schemdata[i].getContent() == CONTENT_IGNORE)
@@ -150,6 +179,7 @@ void Schematic::blitToVManip(MMVManip *vm, v3s16 p, Rotation rot, bool force_pla
 				if (placement_prob == MTSCHEM_PROB_NEVER)
 					continue;
 
+				u32 vi = vm->m_area.index(pos);
 				if (!force_place && !force_place_node) {
 					content_t c = vm->m_data[vi].getContent();
 					if (c != CONTENT_AIR && c != CONTENT_IGNORE)
@@ -176,7 +206,7 @@ bool Schematic::placeOnVManip(MMVManip *vm, v3s16 p, u32 flags,
 	Rotation rot, bool force_place)
 {
 	assert(vm != NULL);
-	assert(schemdata != NULL);
+	assert(schemdata && slice_probs);
 	sanity_check(m_ndef != NULL);
 
 	//// Determine effective rotation and effective schematic dimensions
@@ -245,7 +275,7 @@ void Schematic::placeOnMap(ServerMap *map, v3s16 p, u32 flags,
 	for (it = modified_blocks.begin(); it != modified_blocks.end(); ++it)
 		event.modified_blocks.insert(it->first);
 
-	map->dispatchEvent(&event);
+	map->dispatchEvent(event);
 }
 
 
@@ -329,7 +359,7 @@ bool Schematic::deserializeFromMts(std::istream *is,
 
 
 bool Schematic::serializeToMts(std::ostream *os,
-	const std::vector<std::string> &names)
+	const std::vector<std::string> &names) const
 {
 	std::ostream &ss = *os;
 
@@ -353,7 +383,8 @@ bool Schematic::serializeToMts(std::ostream *os,
 
 
 bool Schematic::serializeToLua(std::ostream *os,
-	const std::vector<std::string> &names, bool use_comments, u32 indent_spaces)
+	const std::vector<std::string> &names, bool use_comments,
+	u32 indent_spaces) const
 {
 	std::ostream &ss = *os;
 

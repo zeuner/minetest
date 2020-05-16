@@ -20,9 +20,18 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "translation.h"
 #include "log.h"
 #include "util/string.h"
+#include <unordered_map>
 
-static Translations main_translations;
-Translations *g_translations = &main_translations;
+
+#ifndef SERVER
+// Client translations
+Translations client_translations;
+Translations *g_client_translations = &client_translations;
+#endif
+
+// Per language server translations
+std::unordered_map<std::string,Translations> server_translations;
+std::unordered_map<std::string,Translations> *g_server_translations = &server_translations;
 
 Translations::~Translations()
 {
@@ -41,7 +50,7 @@ const std::wstring &Translations::getTranslation(
 	try {
 		return m_translations.at(key);
 	} catch (const std::out_of_range &) {
-		warningstream << "Translations: can't find translation for string \""
+		verbosestream << "Translations: can't find translation for string \""
 		              << wide_to_utf8(s) << "\" in textdomain \""
 		              << wide_to_utf8(textdomain) << "\"" << std::endl;
 		// Silence that warning in the future
@@ -58,6 +67,10 @@ void Translations::loadTranslation(const std::string &data)
 
 	while (is.good()) {
 		std::getline(is, line);
+		// Trim last character if file was using a \r\n line ending
+		if (line.length () > 0 && line[line.length() - 1] == '\r')
+			line.resize(line.length() - 1);
+
 		if (str_starts_with(line, "# textdomain:")) {
 			textdomain = utf8_to_wide(trim(str_split(line, ':')[1]));
 		}
@@ -145,6 +158,8 @@ void Translations::loadTranslation(const std::string &data)
 			            << wide_to_utf8(oword1) << "\"" << std::endl;
 		}
 
-		m_translations[textdomain + L"|" + oword1] = oword2;
+		std::wstring translation_index = textdomain + L"|";
+		translation_index.append(oword1);
+		m_translations[translation_index] = oword2;
 	}
 }

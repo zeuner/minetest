@@ -23,6 +23,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "settings.h"
 #include "cpp_api/s_internal.h"
 #include "lua_api/l_areastore.h"
+#include "lua_api/l_auth.h"
 #include "lua_api/l_base.h"
 #include "lua_api/l_craft.h"
 #include "lua_api/l_env.h"
@@ -106,6 +107,7 @@ void ServerScripting::InitializeModApi(lua_State *L, int top)
 	ModChannelRef::Register(L);
 
 	// Initialize mod api modules
+	ModApiAuth::Initialize(L, top);
 	ModApiCraft::Initialize(L, top);
 	ModApiEnvMod::Initialize(L, top);
 	ModApiInventory::Initialize(L, top);
@@ -118,9 +120,4 @@ void ServerScripting::InitializeModApi(lua_State *L, int top)
 	ModApiHttp::Initialize(L, top);
 	ModApiStorage::Initialize(L, top);
 	ModApiChannels::Initialize(L, top);
-}
-
-void log_deprecated(const std::string &message)
-{
-	log_deprecated(NULL, message);
 }

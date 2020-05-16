@@ -22,6 +22,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <string>
 #include "irrlichttypes_bloated.h"
 #include "hud.h"
+#include "skyparams.h"
 
 enum ClientEventType : u8
 {
@@ -38,6 +39,9 @@ enum ClientEventType : u8
 	CE_HUDRM,
 	CE_HUDCHANGE,
 	CE_SET_SKY,
+	CE_SET_SUN,
+	CE_SET_MOON,
+	CE_SET_STARS,
 	CE_OVERRIDE_DAY_NIGHT_RATIO,
 	CE_CLOUD_PARAMS,
 	CLIENTEVENT_MAX,
@@ -82,6 +86,7 @@ struct ClientEvent
 			f32 size;
 			bool collisiondetection;
 			bool collision_removal;
+			bool object_collision;
 			bool vertical;
 			std::string *texture;
 			struct TileAnimationParams animation;
@@ -103,10 +108,11 @@ struct ClientEvent
 			f32 maxsize;
 			bool collisiondetection;
 			bool collision_removal;
+			bool object_collision;
 			u16 attached_id;
 			bool vertical;
 			std::string *texture;
-			u32 id;
+			u64 id;
 			struct TileAnimationParams animation;
 			u8 glow;
 		} add_particlespawner;
@@ -129,6 +135,8 @@ struct ClientEvent
 			v2f *offset;
 			v3f *world_pos;
 			v2s32 *size;
+			s16 z_index;
+			std::string *text2;
 		} hudadd;
 		struct
 		{
@@ -144,13 +152,7 @@ struct ClientEvent
 			v3f *v3fdata;
 			v2s32 *v2s32data;
 		} hudchange;
-		struct
-		{
-			video::SColor *bgcolor;
-			std::string *type;
-			std::vector<std::string> *params;
-			bool clouds;
-		} set_sky;
+		SkyboxParams *set_sky;
 		struct
 		{
 			bool do_override;
@@ -166,5 +168,8 @@ struct ClientEvent
 			f32 speed_x;
 			f32 speed_y;
 		} cloud_params;
+		SunParams *sun_params;
+		MoonParams *moon_params;
+		StarParams *star_params;
 	};
 };

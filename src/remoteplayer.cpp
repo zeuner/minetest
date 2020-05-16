@@ -20,13 +20,13 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #include "remoteplayer.h"
 #include <json/json.h>
-#include "content_sao.h"
 #include "filesys.h"
 #include "gamedef.h"
 #include "porting.h"  // strlcpy
 #include "server.h"
 #include "settings.h"
 #include "convert_json.h"
+#include "server/player_sao.h"
 
 /*
 	RemotePlayer
@@ -66,6 +66,21 @@ RemotePlayer::RemotePlayer(const char *name, IItemDefManager *idef):
 	m_cloud_params.height = 120.0f;
 	m_cloud_params.thickness = 16.0f;
 	m_cloud_params.speed = v2f(0.0f, -2.0f);
+
+	// Skybox defaults:
+
+	SkyboxDefaults sky_defaults;
+
+	m_skybox_params.sky_color = sky_defaults.getSkyColorDefaults();
+	m_skybox_params.type = "regular";
+	m_skybox_params.clouds = true;
+	m_skybox_params.fog_sun_tint = video::SColor(255, 244, 125, 29);
+	m_skybox_params.fog_moon_tint = video::SColorf(0.5, 0.6, 0.8, 1).toSColor();
+	m_skybox_params.fog_tint_type = "default";
+
+	m_sun_params = sky_defaults.getSunDefaults();
+	m_moon_params = sky_defaults.getMoonDefaults();
+	m_star_params = sky_defaults.getStarDefaults();
 }
 
 void RemotePlayer::serializeExtraAttributes(std::string &output)
@@ -79,8 +94,6 @@ void RemotePlayer::serializeExtraAttributes(std::string &output)
 	}
 
 	output = fastWriteJson(json_root);
-
-	m_sao->getMeta().setModified(false);
 }
 
 
@@ -100,7 +113,7 @@ void RemotePlayer::deSerialize(std::istream &is, const std::string &playername,
 
 	if (sao) {
 		try {
-			sao->setHPRaw(args.getS32("hp"));
+			sao->setHPRaw(args.getU16("hp"));
 		} catch(SettingNotFoundException &e) {
 			sao->setHPRaw(PLAYER_MAX_HP_DEFAULT);
 		}
@@ -110,14 +123,14 @@ void RemotePlayer::deSerialize(std::istream &is, const std::string &playername,
 		} catch (SettingNotFoundException &e) {}
 
 		try {
-			sao->setPitch(args.getFloat("pitch"));
+			sao->setLookPitch(args.getFloat("pitch"));
 		} catch (SettingNotFoundException &e) {}
 		try {
-			sao->setYaw(args.getFloat("yaw"));
+			sao->setPlayerYaw(args.getFloat("yaw"));
 		} catch (SettingNotFoundException &e) {}
 
 		try {
-			sao->setBreath(args.getS32("breath"), false);
+			sao->setBreath(args.getU16("breath"), false);
 		} catch (SettingNotFoundException &e) {}
 
 		try {
@@ -139,7 +152,12 @@ void RemotePlayer::deSerialize(std::istream &is, const std::string &playername,
 		} catch (SettingNotFoundException &e) {}
 	}
 
-	inventory.deSerialize(is);
+	try {
+		inventory.deSerialize(is);
+	} catch (SerializationError &e) {
+		errorstream << "Failed to deserialize player inventory. player_name="
+			<< name << " " << e.what() << std::endl;
+	}
 
 	if (!inventory.getList("craftpreview") && inventory.getList("craftresult")) {
 		// Convert players without craftpreview
@@ -165,11 +183,11 @@ void RemotePlayer::serialize(std::ostream &os)
 
 	// This should not happen
 	assert(m_sao);
-	args.setS32("hp", m_sao->getHP());
+	args.setU16("hp", m_sao->getHP());
 	args.setV3F("position", m_sao->getBasePosition());
-	args.setFloat("pitch", m_sao->getPitch());
-	args.setFloat("yaw", m_sao->getYaw());
-	args.setS32("breath", m_sao->getBreath());
+	args.setFloat("pitch", m_sao->getLookPitch());
+	args.setFloat("yaw", m_sao->getRotation().Y);
+	args.setU16("breath", m_sao->getBreath());
 
 	std::string extended_attrs;
 	serializeExtraAttributes(extended_attrs);
@@ -219,4 +237,11 @@ const RemotePlayerChatResult RemotePlayer::canSendChatMessage()
 
 	m_chat_message_allowance -= 1.0f;
 	return RPLAYER_CHATRESULT_OK;
+}
+
+void RemotePlayer::onSuccessfulSave()
+{
+	setModified(false);
+	if (m_sao)
+		m_sao->getMeta().setModified(false);
 }

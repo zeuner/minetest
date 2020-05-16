@@ -81,65 +81,66 @@ local function get_formspec(tabview, name, tabdata)
 				modscreenshot = defaulttexturedir .. "no_screenshot.png"
 		end
 
+		local info = core.get_content_info(selected_pkg.path)
+		local desc = fgettext("No package description available")
+		if info.description and info.description:trim() ~= "" then
+			desc = info.description
+		end
+
 		retval = retval ..
 				"image[5.5,0;3,2;" .. core.formspec_escape(modscreenshot) .. "]" ..
 				"label[8.25,0.6;" .. core.formspec_escape(selected_pkg.name) .. "]" ..
-				"label[5.5,1.7;".. fgettext("Information:") .. "]" ..
-				"textlist[5.5,2.2;6.2,2.4;description;"
-
-		local info = core.get_content_info(selected_pkg.path)
-		local desc = info.description or fgettext("No package description available")
-		local descriptionlines = core.wrap_text(desc, 42, true)
-		for i = 1, #descriptionlines do
-			retval = retval .. core.formspec_escape(descriptionlines[i]) .. ","
-		end
+				"box[5.5,2.2;6.15,2.35;#000]"
 
 		if selected_pkg.type == "mod" then
 			if selected_pkg.is_modpack then
-				retval = retval .. ";0]" ..
-					"button[8.9,4.65;3,1;btn_mod_mgr_rename_modpack;" ..
+				retval = retval ..
+					"button[8.65,4.65;3.25,1;btn_mod_mgr_rename_modpack;" ..
 					fgettext("Rename") .. "]"
 			else
 				--show dependencies
-				local toadd_hard = table.concat(info.depends or {}, ",")
-				local toadd_soft = table.concat(info.optional_depends or {}, ",")
+				desc = desc .. "\n\n"
+				local toadd_hard = table.concat(info.depends or {}, "\n")
+				local toadd_soft = table.concat(info.optional_depends or {}, "\n")
 				if toadd_hard == "" and toadd_soft == "" then
-					retval = retval .. "," .. fgettext("No dependencies.")
+					desc = desc .. fgettext("No dependencies.")
 				else
 					if toadd_hard ~= "" then
-						retval = retval .. "," .. fgettext("Dependencies:") .. ","
-						retval = retval .. toadd_hard
+						desc = desc ..fgettext("Dependencies:") ..
+							"\n" .. toadd_hard
 					end
 					if toadd_soft ~= "" then
 						if toadd_hard ~= "" then
-							retval = retval .. ","
+							desc = desc .. "\n\n"
 						end
-						retval = retval .. "," .. fgettext("Optional dependencies:") .. ","
-						retval = retval .. toadd_soft
+						desc = desc .. fgettext("Optional dependencies:") ..
+							"\n" .. toadd_soft
 					end
 				end
-
-				retval = retval .. ";0]"
 			end
 
 		else
-			retval = retval .. ";0]"
-
 			if selected_pkg.type == "txp" then
 				if selected_pkg.enabled then
 					retval = retval ..
-						"button[8.9,4.65;3,1;btn_mod_mgr_disable_txp;" ..
+						"button[8.65,4.65;3.25,1;btn_mod_mgr_disable_txp;" ..
 						fgettext("Disable Texture Pack") .. "]"
 				else
 					retval = retval ..
-						"button[8.9,4.65;3,1;btn_mod_mgr_use_txp;" ..
+						"button[8.65,4.65;3.25,1;btn_mod_mgr_use_txp;" ..
 						fgettext("Use Texture Pack") .. "]"
 				end
 			end
 		end
 
-		retval = retval .. "button[5.5,4.65;3,1;btn_mod_mgr_delete_mod;"
-			.. fgettext("Uninstall Package") .. "]"
+		retval = retval .. "textarea[5.85,2.2;6.35,2.9;;" ..
+			fgettext("Information:") .. ";" .. desc .. "]"
+
+		if core.may_modify_path(selected_pkg.path) then
+			retval = retval ..
+				"button[5.5,4.65;3.25,1;btn_mod_mgr_delete_mod;" ..
+				fgettext("Uninstall Package") .. "]"
+		end
 	end
 	return retval
 end
@@ -149,11 +150,6 @@ local function handle_buttons(tabview, fields, tabname, tabdata)
 	if fields["pkglist"] ~= nil then
 		local event = core.explode_table_event(fields["pkglist"])
 		tabdata.selected_pkg = event.row
-		return true
-	end
-
-	if fields["btn_mod_mgr_install_local"] ~= nil then
-		core.show_file_open_dialog("mod_mgt_open_dlg", fgettext("Select Package File:"))
 		return true
 	end
 
@@ -167,10 +163,12 @@ local function handle_buttons(tabview, fields, tabname, tabdata)
 	end
 
 	if fields["btn_mod_mgr_rename_modpack"] ~= nil then
-		local dlg_renamemp = create_rename_modpack_dlg(tabdata.selected_pkg)
+		local mod = packages:get_list()[tabdata.selected_pkg]
+		local dlg_renamemp = create_rename_modpack_dlg(mod)
 		dlg_renamemp:set_parent(tabview)
 		tabview:hide()
 		dlg_renamemp:show()
+		packages = nil
 		return true
 	end
 
@@ -195,12 +193,6 @@ local function handle_buttons(tabview, fields, tabname, tabdata)
 	if fields.btn_mod_mgr_disable_txp then
 		core.settings:set("texture_path", "")
 		packages = nil
-		return true
-	end
-
-	if fields["mod_mgt_open_dlg_accepted"] and
-			fields["mod_mgt_open_dlg_accepted"] ~= "" then
-		pkgmgr.install_mod(fields["mod_mgt_open_dlg_accepted"],nil)
 		return true
 	end
 

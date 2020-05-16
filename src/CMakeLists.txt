@@ -6,7 +6,7 @@ INCLUDE(CheckIncludeFiles)
 INCLUDE(CheckLibraryExists)
 
 # Add custom SemiDebug build mode
-set(CMAKE_CXX_FLAGS_SEMIDEBUG "-O1 -g -Wall -Wabi" CACHE STRING
+set(CMAKE_CXX_FLAGS_SEMIDEBUG "-O1 -g -Wall" CACHE STRING
 	"Flags used by the C++ compiler during semidebug builds."
 	FORCE
 )
@@ -62,7 +62,7 @@ set(USE_GETTEXT FALSE)
 
 if(ENABLE_GETTEXT)
 	find_package(GettextLib)
-	if(GETTEXT_FOUND)
+	if(GETTEXTLIB_FOUND)
 		if(WIN32)
 			message(STATUS "GetText library: ${GETTEXT_LIBRARY}")
 			message(STATUS "GetText DLL: ${GETTEXT_DLL}")
@@ -70,7 +70,7 @@ if(ENABLE_GETTEXT)
 		endif()
 		set(USE_GETTEXT TRUE)
 		message(STATUS "GetText enabled; locales found: ${GETTEXT_AVAILABLE_LOCALES}")
-	endif(GETTEXT_FOUND)
+	endif(GETTEXTLIB_FOUND)
 else()
 	mark_as_advanced(GETTEXT_ICONV_DLL GETTEXT_INCLUDE_DIR GETTEXT_LIBRARY GETTEXT_MSGFMT)
 	message(STATUS "GetText disabled.")
@@ -102,10 +102,21 @@ if(BUILD_CLIENT AND ENABLE_SOUND)
 endif()
 
 
-option(ENABLE_GLES "Enable OpenGL ES support" FALSE)
+option(ENABLE_GLES "Use OpenGL ES instead of OpenGL" FALSE)
 mark_as_advanced(ENABLE_GLES)
-if(ENABLE_GLES)
-	find_package(OpenGLES2)
+if(BUILD_CLIENT)
+	if(ENABLE_GLES)
+		find_package(OpenGLES2 REQUIRED)
+	else()
+		# transitive dependency from Irrlicht (see longer explanation below)
+		if(NOT WIN32)
+			set(OPENGL_GL_PREFERENCE "LEGACY" CACHE STRING
+				"See CMake Policy CMP0072 for reference. GLVND is broken on some nvidia setups")
+			set(OpenGL_GL_PREFERENCE ${OPENGL_GL_PREFERENCE})
+
+			find_package(OpenGL REQUIRED)
+		endif()
+	endif()
 endif()
 
 
@@ -159,27 +170,14 @@ option(ENABLE_POSTGRESQL "Enable PostgreSQL backend" TRUE)
 set(USE_POSTGRESQL FALSE)
 
 if(ENABLE_POSTGRESQL)
-	find_program(POSTGRESQL_CONFIG_EXECUTABLE pg_config DOC "pg_config")
-	find_library(POSTGRESQL_LIBRARY pq)
-	if(POSTGRESQL_CONFIG_EXECUTABLE)
-		execute_process(COMMAND ${POSTGRESQL_CONFIG_EXECUTABLE} --includedir-server
-			OUTPUT_VARIABLE POSTGRESQL_SERVER_INCLUDE_DIRS
-			OUTPUT_STRIP_TRAILING_WHITESPACE)
-		execute_process(COMMAND ${POSTGRESQL_CONFIG_EXECUTABLE}
-			OUTPUT_VARIABLE POSTGRESQL_CLIENT_INCLUDE_DIRS
-			OUTPUT_STRIP_TRAILING_WHITESPACE)
-		# This variable is case sensitive for the cmake PostgreSQL module
-		set(PostgreSQL_ADDITIONAL_SEARCH_PATHS ${POSTGRESQL_SERVER_INCLUDE_DIRS} ${POSTGRESQL_CLIENT_INCLUDE_DIRS})
-	endif()
-
 	find_package("PostgreSQL")
 
-	if(POSTGRESQL_FOUND)
+	if(PostgreSQL_FOUND)
 		set(USE_POSTGRESQL TRUE)
 		message(STATUS "PostgreSQL backend enabled")
 		# This variable is case sensitive, don't try to change it to POSTGRESQL_INCLUDE_DIR
-		message(STATUS "PostgreSQL includes: ${PostgreSQL_INCLUDE_DIR}")
-		include_directories(${PostgreSQL_INCLUDE_DIR})
+		message(STATUS "PostgreSQL includes: ${PostgreSQL_INCLUDE_DIRS}")
+		include_directories(${PostgreSQL_INCLUDE_DIRS})
 	else()
 		message(STATUS "PostgreSQL not found!")
 	endif()
@@ -189,7 +187,7 @@ option(ENABLE_LEVELDB "Enable LevelDB backend" TRUE)
 set(USE_LEVELDB FALSE)
 
 if(ENABLE_LEVELDB)
-	find_library(LEVELDB_LIBRARY leveldb)
+	find_library(LEVELDB_LIBRARY NAMES leveldb libleveldb)
 	find_path(LEVELDB_INCLUDE_DIR db.h PATH_SUFFIXES leveldb)
 	if(LEVELDB_LIBRARY AND LEVELDB_INCLUDE_DIR)
 		set(USE_LEVELDB TRUE)
@@ -218,6 +216,26 @@ endif(ENABLE_REDIS)
 
 
 find_package(SQLite3 REQUIRED)
+
+OPTION(ENABLE_PROMETHEUS "Enable prometheus client support" FALSE)
+set(USE_PROMETHEUS FALSE)
+
+if(ENABLE_PROMETHEUS)
+	find_path(PROMETHEUS_CPP_INCLUDE_DIR NAMES prometheus/counter.h)
+	find_library(PROMETHEUS_PULL_LIBRARY NAMES prometheus-cpp-pull)
+	find_library(PROMETHEUS_CORE_LIBRARY NAMES prometheus-cpp-core)
+	if(PROMETHEUS_CPP_INCLUDE_DIR AND PROMETHEUS_PULL_LIBRARY AND PROMETHEUS_CORE_LIBRARY)
+		set(PROMETHEUS_LIBRARIES ${PROMETHEUS_PULL_LIBRARY} ${PROMETHEUS_CORE_LIBRARY})
+		set(USE_PROMETHEUS TRUE)
+		include_directories(${PROMETHEUS_CPP_INCLUDE_DIR})
+	endif(PROMETHEUS_CPP_INCLUDE_DIR AND PROMETHEUS_PULL_LIBRARY AND PROMETHEUS_CORE_LIBRARY)
+endif(ENABLE_PROMETHEUS)
+
+if(USE_PROMETHEUS)
+	message(STATUS "Prometheus client enabled.")
+else(USE_PROMETHEUS)
+	message(STATUS "Prometheus client disabled.")
+endif(USE_PROMETHEUS)
 
 OPTION(ENABLE_SPATIAL "Enable SpatialIndex AreaStore backend" TRUE)
 set(USE_SPATIAL FALSE)
@@ -264,46 +282,48 @@ if(WIN32)
 	set(PLATFORM_LIBS ws2_32.lib version.lib shlwapi.lib ${PLATFORM_LIBS})
 
 	# Zlib stuff
-	set(ZLIB_INCLUDE_DIR "${PROJECT_SOURCE_DIR}/../../zlib/zlib-1.2.5"
-			CACHE PATH "Zlib include directory")
-	set(ZLIB_LIBRARIES "${PROJECT_SOURCE_DIR}/../../zlib125dll/dll32/zlibwapi.lib"
-			CACHE FILEPATH "Path to zlib library (usually zlibwapi.lib)")
-	set(ZLIB_DLL "${PROJECT_SOURCE_DIR}/../../zlib125dll/dll32/zlibwapi.dll"
-			CACHE FILEPATH "Path to zlib DLL (for installation)")
-	set(ZLIBWAPI_DLL "" CACHE FILEPATH "Path to zlibwapi DLL")
-	set(IRRLICHT_SOURCE_DIR "${PROJECT_SOURCE_DIR}/../../irrlicht-1.7.2"
-			CACHE PATH "irrlicht dir")
-	if(USE_FREETYPE)
-		set(FREETYPE_INCLUDE_DIR_ft2build "${PROJECT_SOURCE_DIR}/../../freetype2/include/"
-				CACHE PATH "freetype include dir")
-		set(FREETYPE_INCLUDE_DIR_freetype2 "${PROJECT_SOURCE_DIR}/../../freetype2/include/freetype"
-				CACHE PATH "freetype include dir")
-		set(FREETYPE_LIBRARY "${PROJECT_SOURCE_DIR}/../../freetype2/objs/win32/vc2005/freetype247.lib"
-				CACHE FILEPATH "Path to freetype247.lib")
+	find_path(ZLIB_INCLUDE_DIR "zlib.h" DOC "Zlib include directory")
+	find_library(ZLIB_LIBRARIES "zlib" DOC "Path to zlib library")
+
+	# Dll's are automatically copied to the output directory by vcpkg when VCPKG_APPLOCAL_DEPS=ON
+	if(NOT VCPKG_APPLOCAL_DEPS)
+		find_file(ZLIB_DLL NAMES "zlib.dll" "zlib1.dll" DOC "Path to zlib.dll for installation (optional)")
+		if(ENABLE_SOUND)
+			set(OPENAL_DLL "" CACHE FILEPATH "Path to OpenAL32.dll for installation (optional)")
+			set(OGG_DLL "" CACHE FILEPATH "Path to libogg.dll for installation (optional)")
+			set(VORBIS_DLL "" CACHE FILEPATH "Path to libvorbis.dll for installation (optional)")
+			set(VORBISFILE_DLL "" CACHE FILEPATH "Path to libvorbisfile.dll for installation (optional)")
+		endif()
+		if(USE_LUAJIT)
+			set(LUA_DLL "" CACHE FILEPATH "Path to luajit-5.1.dll for installation (optional)")
+		endif()
 	endif()
-	if(ENABLE_SOUND)
-		set(OPENAL_DLL "" CACHE FILEPATH "Path to OpenAL32.dll for installation (optional)")
-		set(OGG_DLL "" CACHE FILEPATH "Path to libogg.dll for installation (optional)")
-		set(VORBIS_DLL "" CACHE FILEPATH "Path to libvorbis.dll for installation (optional)")
-		set(VORBISFILE_DLL "" CACHE FILEPATH "Path to libvorbisfile.dll for installation (optional)")
-	endif()
-	if(USE_LUAJIT)
-		set(LUA_DLL "" CACHE FILEPATH "Path to lua51.dll for installation (optional)")
-	endif()
+
 else()
 	# Unix probably
 	if(BUILD_CLIENT)
-		if(NOT HAIKU)
+		if(NOT HAIKU AND NOT APPLE)
 			find_package(X11 REQUIRED)
-		endif(NOT HAIKU)
-		find_package(OpenGL REQUIRED)
+		endif(NOT HAIKU AND NOT APPLE)
+
+		##
+		# The following dependencies are transitive dependencies from Irrlicht.
+		# Minetest itself does not use them, but we link them so that statically
+		# linking Irrlicht works.
+		if(NOT HAIKU AND NOT APPLE)
+			# This way Xxf86vm is found on OpenBSD too
+			find_library(XXF86VM_LIBRARY Xxf86vm)
+			mark_as_advanced(XXF86VM_LIBRARY)
+			set(CLIENT_PLATFORM_LIBS ${CLIENT_PLATFORM_LIBS} ${XXF86VM_LIBRARY})
+		endif(NOT HAIKU AND NOT APPLE)
+
 		find_package(JPEG REQUIRED)
 		find_package(BZip2 REQUIRED)
 		find_package(PNG REQUIRED)
 		if(APPLE)
-			find_library(CARBON_LIB Carbon)
-			find_library(COCOA_LIB Cocoa)
-			find_library(IOKIT_LIB IOKit)
+			find_library(CARBON_LIB Carbon REQUIRED)
+			find_library(COCOA_LIB Cocoa REQUIRED)
+			find_library(IOKIT_LIB IOKit REQUIRED)
 			mark_as_advanced(
 				CARBON_LIB
 				COCOA_LIB
@@ -311,7 +331,9 @@ else()
 			)
 			SET(CLIENT_PLATFORM_LIBS ${CLIENT_PLATFORM_LIBS} ${CARBON_LIB} ${COCOA_LIB} ${IOKIT_LIB})
 		endif(APPLE)
+		##
 	endif(BUILD_CLIENT)
+
 	find_package(ZLIB REQUIRED)
 	set(PLATFORM_LIBS -lpthread ${CMAKE_DL_LIBS})
 	if(APPLE)
@@ -322,13 +344,6 @@ else()
 			set(PLATFORM_LIBS -lrt ${PLATFORM_LIBS})
 		endif(HAVE_LIBRT)
 	endif(APPLE)
-
-	if(NOT HAIKU AND NOT APPLE)
-	# This way Xxf86vm is found on OpenBSD too
-		find_library(XXF86VM_LIBRARY Xxf86vm)
-		mark_as_advanced(XXF86VM_LIBRARY)
-		set(CLIENT_PLATFORM_LIBS ${CLIENT_PLATFORM_LIBS} ${XXF86VM_LIBRARY})
-	endif(NOT HAIKU AND NOT APPLE)
 
 	# Prefer local iconv if installed
 	find_library(ICONV_LIBRARY iconv)
@@ -380,7 +395,6 @@ set(common_SRCS
 	collision.cpp
 	content_mapnode.cpp
 	content_nodemeta.cpp
-	content_sao.cpp
 	convert_json.cpp
 	craftdef.cpp
 	debug.cpp
@@ -389,15 +403,16 @@ set(common_SRCS
 	environment.cpp
 	face_position_cache.cpp
 	filesys.cpp
-	genericobject.cpp
 	gettext.cpp
 	httpfetch.cpp
+	hud.cpp
 	inventory.cpp
 	inventorymanager.cpp
 	itemdef.cpp
 	itemstackmetadata.cpp
 	light.cpp
 	log.cpp
+	main.cpp
 	map.cpp
 	map_settings_manager.cpp
 	mapblock.cpp
@@ -416,7 +431,6 @@ set(common_SRCS
 	player.cpp
 	porting.cpp
 	profiler.cpp
-	quicktune.cpp
 	raycast.cpp
 	reflowscan.cpp
 	remoteplayer.cpp
@@ -426,10 +440,10 @@ set(common_SRCS
 	server.cpp
 	serverenvironment.cpp
 	serverlist.cpp
-	serverobject.cpp
 	settings.cpp
 	staticobject.cpp
 	terminal_chat_console.cpp
+	texture_override.cpp
 	tileanimation.cpp
 	tool.cpp
 	translation.cpp
@@ -441,8 +455,11 @@ set(common_SRCS
 	${JTHREAD_SRCS}
 	${common_SCRIPT_SRCS}
 	${UTIL_SRCS}
-	${UNITTEST_SRCS}
 )
+
+if(BUILD_UNITTESTS)
+	set(common_SRCS ${common_SRCS} ${UNITTEST_SRCS})
+endif()
 
 
 # This gives us the icon and file version information
@@ -458,7 +475,7 @@ if(WIN32)
 			-i${WINRESOURCE_FILE}
 			-o ${CMAKE_CURRENT_BINARY_DIR}/winresource_rc.o
 			WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-			DEPENDS ${WINRESOURCE_FILE})
+			DEPENDS ${WINRESOURCE_FILE} ${MINETEST_EXE_MANIFEST_FILE})
 		SET(extra_windows_SRCS ${CMAKE_CURRENT_BINARY_DIR}/winresource_rc.o)
 	else(MINGW) # Probably MSVC
 		set(extra_windows_SRCS ${WINRESOURCE_FILE} ${MINETEST_EXE_MANIFEST_FILE})
@@ -477,43 +494,18 @@ set(client_SRCS
 	${gui_SRCS}
 	${client_network_SRCS}
 	${client_irrlicht_changes_SRCS}
-	camera.cpp
-	client.cpp
-	clientenvironment.cpp
-	clientmap.cpp
-	clientmedia.cpp
-	clientobject.cpp
-	clouds.cpp
-	content_cao.cpp
-	content_cso.cpp
-	content_mapblock.cpp
-	convert_json.cpp
-	filecache.cpp
-	fontengine.cpp
-	game.cpp
-	guiscalingfilter.cpp
-	hud.cpp
-	imagefilters.cpp
-	keycode.cpp
-	localplayer.cpp
-	main.cpp
-	mapblock_mesh.cpp
-	mesh.cpp
-	mesh_generator_thread.cpp
-	minimap.cpp
-	particles.cpp
-	shader.cpp
-	sky.cpp
-	wieldmesh.cpp
 	${client_SCRIPT_SRCS}
-	${UNITTEST_CLIENT_SRCS}
 )
+
+if(BUILD_UNITTESTS)
+	set(client_SRCS ${client_SRCS} ${UNITTEST_CLIENT_SRCS})
+endif()
+
 list(SORT client_SRCS)
 
 # Server sources
 set(server_SRCS
 	${common_SRCS}
-	main.cpp
 )
 list(SORT server_SRCS)
 
@@ -529,9 +521,7 @@ include_directories(
 	${PROJECT_SOURCE_DIR}
 	${IRRLICHT_INCLUDE_DIR}
 	${ZLIB_INCLUDE_DIR}
-	${CMAKE_BUILD_TYPE}
 	${PNG_INCLUDE_DIR}
-	${GETTEXT_INCLUDE_DIR}
 	${SOUND_INCLUDE_DIRS}
 	${SQLITE3_INCLUDE_DIR}
 	${LUA_INCLUDE_DIR}
@@ -541,6 +531,9 @@ include_directories(
 	${PROJECT_SOURCE_DIR}/script
 )
 
+if(USE_GETTEXT)
+	include_directories(${GETTEXT_INCLUDE_DIR})
+endif()
 
 if(USE_FREETYPE)
 	include_directories(${FREETYPE_INCLUDE_DIRS})
@@ -561,29 +554,37 @@ if(BUILD_CLIENT)
 		${PROJECT_NAME}
 		${ZLIB_LIBRARIES}
 		${IRRLICHT_LIBRARY}
-		${OPENGL_LIBRARIES}
 		${JPEG_LIBRARIES}
 		${BZIP2_LIBRARIES}
 		${PNG_LIBRARIES}
 		${X11_LIBRARIES}
-		${GETTEXT_LIBRARY}
 		${SOUND_LIBRARIES}
 		${SQLITE3_LIBRARY}
 		${LUA_LIBRARY}
 		${GMP_LIBRARY}
 		${JSON_LIBRARY}
-		${OPENGLES2_LIBRARIES}
 		${PLATFORM_LIBS}
 		${CLIENT_PLATFORM_LIBS}
 	)
-	if(APPLE)
+	target_link_libraries(
+		${client_LIBS}
+	)
+	if(ENABLE_GLES)
 		target_link_libraries(
-			${client_LIBS}
-			${ICONV_LIBRARY}
+			${PROJECT_NAME}
+			${OPENGLES2_LIBRARIES}
+			${EGL_LIBRARIES}
 		)
 	else()
 		target_link_libraries(
-			${client_LIBS}
+			${PROJECT_NAME}
+			${OPENGL_LIBRARIES}
+		)
+	endif()
+	if(USE_GETTEXT)
+		target_link_libraries(
+			${PROJECT_NAME}
+			${GETTEXT_LIBRARY}
 		)
 	endif()
 	if(USE_CURL)
@@ -608,13 +609,16 @@ if(BUILD_CLIENT)
 		target_link_libraries(${PROJECT_NAME} ${CURSES_LIBRARIES})
 	endif()
 	if (USE_POSTGRESQL)
-		target_link_libraries(${PROJECT_NAME} ${POSTGRESQL_LIBRARY})
+		target_link_libraries(${PROJECT_NAME} ${PostgreSQL_LIBRARIES})
 	endif()
 	if (USE_LEVELDB)
 		target_link_libraries(${PROJECT_NAME} ${LEVELDB_LIBRARY})
 	endif()
 	if (USE_REDIS)
 		target_link_libraries(${PROJECT_NAME} ${REDIS_LIBRARY})
+	endif()
+	if (USE_PROMETHEUS)
+		target_link_libraries(${PROJECT_NAME} ${PROMETHEUS_LIBRARIES})
 	endif()
 	if (USE_SPATIAL)
 		target_link_libraries(${PROJECT_NAME} ${SPATIAL_LIBRARY})
@@ -630,24 +634,29 @@ if(BUILD_SERVER)
 		${ZLIB_LIBRARIES}
 		${SQLITE3_LIBRARY}
 		${JSON_LIBRARY}
-		${GETTEXT_LIBRARY}
 		${LUA_LIBRARY}
 		${GMP_LIBRARY}
 		${PLATFORM_LIBS}
 	)
 	set_target_properties(${PROJECT_NAME}server PROPERTIES
 			COMPILE_DEFINITIONS "SERVER")
+	if (USE_GETTEXT)
+		target_link_libraries(${PROJECT_NAME}server ${GETTEXT_LIBRARY})
+	endif()
 	if (USE_CURSES)
 		target_link_libraries(${PROJECT_NAME}server ${CURSES_LIBRARIES})
 	endif()
 	if (USE_POSTGRESQL)
-		target_link_libraries(${PROJECT_NAME}server ${POSTGRESQL_LIBRARY})
+		target_link_libraries(${PROJECT_NAME}server ${PostgreSQL_LIBRARIES})
 	endif()
 	if (USE_LEVELDB)
 		target_link_libraries(${PROJECT_NAME}server ${LEVELDB_LIBRARY})
 	endif()
 	if (USE_REDIS)
 		target_link_libraries(${PROJECT_NAME}server ${REDIS_LIBRARY})
+	endif()
+	if (USE_PROMETHEUS)
+		target_link_libraries(${PROJECT_NAME}server ${PROMETHEUS_LIBRARIES})
 	endif()
 	if (USE_SPATIAL)
 		target_link_libraries(${PROJECT_NAME}server ${SPATIAL_LIBRARY})
@@ -667,13 +676,11 @@ set(GETTEXT_BLACKLISTED_LOCALES
 	he
 	ko
 	ky
-	zh_CN
-	zh_TW
 )
 
 option(APPLY_LOCALE_BLACKLIST "Use a blacklist to avoid broken locales" TRUE)
 
-if (GETTEXT_FOUND AND APPLY_LOCALE_BLACKLIST)
+if (GETTEXTLIB_FOUND AND APPLY_LOCALE_BLACKLIST)
 	set(GETTEXT_USED_LOCALES "")
 	foreach(LOCALE ${GETTEXT_AVAILABLE_LOCALES})
 		if (NOT ";${GETTEXT_BLACKLISTED_LOCALES};" MATCHES ";${LOCALE};")
@@ -685,19 +692,22 @@ endif()
 
 # Set some optimizations and tweaks
 
-include(CheckCXXCompilerFlag)
+include(CheckCSourceCompiles)
 
 if(MSVC)
 	# Visual Studio
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /D WIN32_LEAN_AND_MEAN /MP")
 	# EHa enables SEH exceptions (used for catching segfaults)
-	set(CMAKE_CXX_FLAGS_RELEASE "/EHa /Ox /GL /FD /MT /GS- /Zi /fp:fast /D NDEBUG /D _HAS_ITERATOR_DEBUGGING=0 /TP")
+	set(CMAKE_CXX_FLAGS_RELEASE "/EHa /Ox /GL /FD /MD /GS- /Zi /fp:fast /D NDEBUG /D _HAS_ITERATOR_DEBUGGING=0 /TP")
 	if(CMAKE_SIZEOF_VOID_P EQUAL 4)
 		set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /arch:SSE")
 	endif()
-	#set(CMAKE_EXE_LINKER_FLAGS_RELEASE "/LTCG /NODEFAULTLIB:\"libcmtd.lib\" /NODEFAULTLIB:\"libcmt.lib\"")
-	set(CMAKE_EXE_LINKER_FLAGS_RELEASE "/LTCG /INCREMENTAL:NO /DEBUG /OPT:REF /OPT:ICF")
-
+	
+	if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+		set(CMAKE_EXE_LINKER_FLAGS_RELEASE "/INCREMENTAL:NO /DEBUG /OPT:REF /OPT:ICF")
+	else()
+		set(CMAKE_EXE_LINKER_FLAGS_RELEASE "/LTCG /INCREMENTAL:NO /DEBUG /OPT:REF /OPT:ICF")
+	endif()
 
 	set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup")
 
@@ -709,30 +719,29 @@ if(MSVC)
 	set(CMAKE_CXX_FLAGS_DEBUG "/MDd /Zi /Ob0 /Od /RTC1")
 
 	# Flags for C files (sqlite)
-	# /MT = Link statically with standard library stuff
-	set(CMAKE_C_FLAGS_RELEASE "/O2 /Ob2 /MT")
+	# /MD = dynamically link to MSVCRxxx.dll
+	set(CMAKE_C_FLAGS_RELEASE "/O2 /Ob2 /MD")
 else()
+	# GCC or compatible compilers such as Clang
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
-	# Probably GCC
-	if(APPLE)
-		SET(CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} -pagezero_size 10000 -image_base 100000000" )
-	endif()
 	if(WARN_ALL)
 		set(RELEASE_WARNING_FLAGS "-Wall")
 	else()
 		set(RELEASE_WARNING_FLAGS "")
 	endif()
-
-	if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
-		# clang does not understand __extern_always_inline but libc headers use it
-		set(OTHER_FLAGS "${OTHER_FLAGS} \"-D__extern_always_inline=extern __always_inline\"")
-		set(OTHER_FLAGS "${OTHER_FLAGS} -Wsign-compare")
+	if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+		set(WARNING_FLAGS "${WARNING_FLAGS} -Wsign-compare")
 	endif()
 
-	if(WIN32 AND NOT ZLIBWAPI_DLL AND CMAKE_SIZEOF_VOID_P EQUAL 4)
-		set(OTHER_FLAGS "${OTHER_FLAGS} -DWIN32_NO_ZLIB_WINAPI")
-		message(WARNING "Defaulting to cdecl for zlib on win32 because ZLIBWAPI_DLL"
-			" isn't set, ensure that ZLIBWAPI_DLL is set if you want stdcall.")
+	if(APPLE AND USE_LUAJIT)
+		# required per http://luajit.org/install.html
+		SET(CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} -pagezero_size 10000 -image_base 100000000")
+	elseif(UNIX AND USE_LUAJIT)
+		check_c_source_compiles("#ifndef __aarch64__\n#error\n#endif\nint main(){}" IS_AARCH64)
+		if(IS_AARCH64)
+			# Move text segment below LuaJIT's 47-bit limit (see issue #9367)
+			SET(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-Ttext-segment=0x200000000")
+		endif()
 	endif()
 
 	if(MINGW)
@@ -740,14 +749,26 @@ else()
 		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DWIN32_LEAN_AND_MEAN")
 	endif()
 
+	# Use a safe subset of flags to speed up math calculations:
+	# - we don't need errno or math exceptions
+	# - we don't deal with Inf/NaN or signed zero
+	set(MATH_FLAGS "-fno-math-errno -fno-trapping-math -ffinite-math-only -fno-signed-zeros")
+
 	set(CMAKE_CXX_FLAGS_RELEASE "-DNDEBUG ${RELEASE_WARNING_FLAGS} ${WARNING_FLAGS} ${OTHER_FLAGS} -Wall -pipe -funroll-loops")
-	if(CMAKE_SYSTEM_NAME MATCHES "(Darwin|FreeBSD)")
+	if(CMAKE_SYSTEM_NAME MATCHES "(Darwin|BSD|DragonFly)")
 		set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -Os")
 	else()
-		set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -ffast-math -fomit-frame-pointer")
-	endif(CMAKE_SYSTEM_NAME MATCHES "(Darwin|FreeBSD)")
-	set(CMAKE_CXX_FLAGS_SEMIDEBUG "-g -O1 -Wall -Wabi ${WARNING_FLAGS} ${OTHER_FLAGS}")
-	set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -Wall -Wabi ${WARNING_FLAGS} ${OTHER_FLAGS}")
+		set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -fomit-frame-pointer")
+		if(CMAKE_SYSTEM_NAME STREQUAL "Linux"
+				AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang"
+				AND CMAKE_CXX_COMPILER_VERSION MATCHES "^9\\.")
+			# Clang 9 has broken -ffast-math on glibc
+		else()
+			set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} ${MATH_FLAGS}")
+		endif()
+	endif(CMAKE_SYSTEM_NAME MATCHES "(Darwin|BSD|DragonFly)")
+	set(CMAKE_CXX_FLAGS_SEMIDEBUG "-g -O1 -Wall ${WARNING_FLAGS} ${OTHER_FLAGS}")
+	set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -Wall ${WARNING_FLAGS} ${OTHER_FLAGS}")
 
 	if(USE_GPROF)
 		set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -pg")
@@ -762,40 +783,58 @@ endif()
 # Installation
 
 if(WIN32)
-	if(USE_SOUND)
-		if(OPENAL_DLL)
-			install(FILES ${OPENAL_DLL} DESTINATION ${BINDIR})
+	if(VCPKG_APPLOCAL_DEPS)
+		# Collect the dll's from the output path
+		install(DIRECTORY ${EXECUTABLE_OUTPUT_PATH}/Release/
+				DESTINATION ${BINDIR}
+				CONFIGURATIONS Release
+				FILES_MATCHING PATTERN "*.dll")
+		install(DIRECTORY ${EXECUTABLE_OUTPUT_PATH}/Debug/
+				DESTINATION ${BINDIR}
+				CONFIGURATIONS Debug
+				FILES_MATCHING PATTERN "*.dll")
+		install(DIRECTORY ${EXECUTABLE_OUTPUT_PATH}/RelWithDebInfo/
+				DESTINATION ${BINDIR}
+				CONFIGURATIONS RelWithDebInfo
+				FILES_MATCHING PATTERN "*.dll")
+		install(DIRECTORY ${EXECUTABLE_OUTPUT_PATH}/MinSizeRel/
+				DESTINATION ${BINDIR}
+				CONFIGURATIONS MinSizeRel
+				FILES_MATCHING PATTERN "*.dll")
+	else()
+		# Use the old-style way to install dll's
+		if(USE_SOUND)
+			if(OPENAL_DLL)
+				install(FILES ${OPENAL_DLL} DESTINATION ${BINDIR})
+			endif()
+			if(OGG_DLL)
+				install(FILES ${OGG_DLL} DESTINATION ${BINDIR})
+			endif()
+			if(VORBIS_DLL)
+				install(FILES ${VORBIS_DLL} DESTINATION ${BINDIR})
+			endif()
+			if(VORBISFILE_DLL)
+				install(FILES ${VORBISFILE_DLL} DESTINATION ${BINDIR})
+			endif()
 		endif()
-		if(OGG_DLL)
-			install(FILES ${OGG_DLL} DESTINATION ${BINDIR})
+		if(CURL_DLL)
+			install(FILES ${CURL_DLL} DESTINATION ${BINDIR})
 		endif()
-		if(VORBIS_DLL)
-			install(FILES ${VORBIS_DLL} DESTINATION ${BINDIR})
+		if(ZLIB_DLL)
+			install(FILES ${ZLIB_DLL} DESTINATION ${BINDIR})
 		endif()
-		if(VORBISFILE_DLL)
-			install(FILES ${VORBISFILE_DLL} DESTINATION ${BINDIR})
+		if(FREETYPE_DLL)
+			install(FILES ${FREETYPE_DLL} DESTINATION ${BINDIR})
 		endif()
-	endif()
-	if(CURL_DLL)
-		install(FILES ${CURL_DLL} DESTINATION ${BINDIR})
-	endif()
-	if(ZLIB_DLL)
-		install(FILES ${ZLIB_DLL} DESTINATION ${BINDIR})
-	endif()
-	if(ZLIBWAPI_DLL)
-		install(FILES ${ZLIBWAPI_DLL} DESTINATION ${BINDIR})
-	endif()
-	if(FREETYPE_DLL)
-		install(FILES ${FREETYPE_DLL} DESTINATION ${BINDIR})
-	endif()
-	if(SQLITE3_DLL)
-		install(FILES ${SQLITE3_DLL} DESTINATION ${BINDIR})
-	endif()
-	if(LEVELDB_DLL)
-		install(FILES ${LEVELDB_DLL} DESTINATION ${BINDIR})
-	endif()
-	if(LUA_DLL)
-		install(FILES ${LUA_DLL} DESTINATION ${BINDIR})
+		if(SQLITE3_DLL)
+			install(FILES ${SQLITE3_DLL} DESTINATION ${BINDIR})
+		endif()
+		if(LEVELDB_DLL)
+			install(FILES ${LEVELDB_DLL} DESTINATION ${BINDIR})
+		endif()
+		if(LUA_DLL)
+			install(FILES ${LUA_DLL} DESTINATION ${BINDIR})
+		endif()
 	endif()
 endif()
 
@@ -823,16 +862,26 @@ if(BUILD_CLIENT)
 		endforeach()
 	endif()
 
+	if(USE_FREETYPE)
+		install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../fonts" DESTINATION "${SHAREDIR}"
+				FILES_MATCHING PATTERN "*.ttf" PATTERN "*.txt")
+	else()
+		install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../fonts" DESTINATION "${SHAREDIR}"
+				FILES_MATCHING PATTERN "*.png" PATTERN "*.xml")
+	endif()
+
 	if(WIN32)
-		if(DEFINED IRRLICHT_DLL)
-			install(FILES ${IRRLICHT_DLL} DESTINATION ${BINDIR})
-		endif()
-		if(USE_GETTEXT)
-			if(DEFINED GETTEXT_DLL)
-				install(FILES ${GETTEXT_DLL} DESTINATION ${BINDIR})
+		if(NOT VCPKG_APPLOCAL_DEPS)
+			if(DEFINED IRRLICHT_DLL)
+				install(FILES ${IRRLICHT_DLL} DESTINATION ${BINDIR})
 			endif()
-			if(DEFINED GETTEXT_ICONV_DLL)
-				install(FILES ${GETTEXT_ICONV_DLL} DESTINATION ${BINDIR})
+			if(USE_GETTEXT)
+				if(DEFINED GETTEXT_DLL)
+					install(FILES ${GETTEXT_DLL} DESTINATION ${BINDIR})
+				endif()
+				if(DEFINED GETTEXT_ICONV_DLL)
+					install(FILES ${GETTEXT_ICONV_DLL} DESTINATION ${BINDIR})
+				endif()
 			endif()
 		endif()
 	endif()

@@ -36,12 +36,12 @@ public:
 	void beginSave();
 	void endSave();
 
+	// Open and initialize the database if needed
+	virtual void pingDatabase();
+
 	bool initialized() const { return m_initialized; }
 protected:
 	Database_SQLite3(const std::string &savedir, const std::string &dbname);
-
-	// Open and initialize the database if needed
-	void verifyDatabase();
 
 	// Convertors
 	inline void str_to_sqlite(sqlite3_stmt *s, int iCol, const std::string &str) const
@@ -83,6 +83,16 @@ protected:
 	inline u32 sqlite_to_uint(sqlite3_stmt *s, int iCol)
 	{
 		return (u32) sqlite3_column_int(s, iCol);
+	}
+
+	inline s64 sqlite_to_int64(sqlite3_stmt *s, int iCol)
+	{
+		return (s64) sqlite3_column_int64(s, iCol);
+	}
+
+	inline u64 sqlite_to_uint64(sqlite3_stmt *s, int iCol)
+	{
+		return (u64) sqlite3_column_int64(s, iCol);
 	}
 
 	inline float sqlite_to_float(sqlite3_stmt *s, int iCol)
@@ -136,6 +146,8 @@ public:
 	MapDatabaseSQLite3(const std::string &savedir);
 	virtual ~MapDatabaseSQLite3();
 
+	virtual void pingDatabase() { Database_SQLite3::pingDatabase(); }
+
 	bool saveBlock(const v3s16 &pos, const std::string &data);
 	void loadBlock(const v3s16 &pos, std::string *block);
 	bool deleteBlock(const v3s16 &pos);
@@ -162,6 +174,8 @@ class PlayerDatabaseSQLite3 : private Database_SQLite3, public PlayerDatabase
 public:
 	PlayerDatabaseSQLite3(const std::string &savedir);
 	virtual ~PlayerDatabaseSQLite3();
+
+	virtual void pingDatabase() { Database_SQLite3::pingDatabase(); }
 
 	void savePlayer(RemotePlayer *player);
 	bool loadPlayer(RemotePlayer *player, PlayerSAO *sao);
@@ -190,4 +204,37 @@ private:
 	sqlite3_stmt *m_stmt_player_metadata_load = nullptr;
 	sqlite3_stmt *m_stmt_player_metadata_remove = nullptr;
 	sqlite3_stmt *m_stmt_player_metadata_add = nullptr;
+};
+
+class AuthDatabaseSQLite3 : private Database_SQLite3, public AuthDatabase
+{
+public:
+	AuthDatabaseSQLite3(const std::string &savedir);
+	virtual ~AuthDatabaseSQLite3();
+
+	virtual void pingDatabase() { Database_SQLite3::pingDatabase(); }
+
+	virtual bool getAuth(const std::string &name, AuthEntry &res);
+	virtual bool saveAuth(const AuthEntry &authEntry);
+	virtual bool createAuth(AuthEntry &authEntry);
+	virtual bool deleteAuth(const std::string &name);
+	virtual void listNames(std::vector<std::string> &res);
+	virtual void reload();
+
+protected:
+	virtual void createDatabase();
+	virtual void initStatements();
+
+private:
+	virtual void writePrivileges(const AuthEntry &authEntry);
+
+	sqlite3_stmt *m_stmt_read = nullptr;
+	sqlite3_stmt *m_stmt_write = nullptr;
+	sqlite3_stmt *m_stmt_create = nullptr;
+	sqlite3_stmt *m_stmt_delete = nullptr;
+	sqlite3_stmt *m_stmt_list_names = nullptr;
+	sqlite3_stmt *m_stmt_read_privs = nullptr;
+	sqlite3_stmt *m_stmt_write_privs = nullptr;
+	sqlite3_stmt *m_stmt_delete_privs = nullptr;
+	sqlite3_stmt *m_stmt_last_insert_rowid = nullptr;
 };
