@@ -529,13 +529,13 @@ int ModApiEnvMod::l_set_node_level(lua_State *L)
 
 // add_node_level(pos, level)
 // pos = {x=num, y=num, z=num}
-// level: 0..63
+// level: -127..127
 int ModApiEnvMod::l_add_node_level(lua_State *L)
 {
 	GET_ENV_PTR;
 
 	v3s16 pos = read_v3s16(L, 1);
-	u8 level = 1;
+	s16 level = 1;
 	if(lua_isnumber(L, 2))
 		level = lua_tonumber(L, 2);
 	MapNode n = env->getMap().getNode(pos);
@@ -589,19 +589,19 @@ int ModApiEnvMod::l_add_entity(lua_State *L)
 {
 	GET_ENV_PTR;
 
-	// pos
 	v3f pos = checkFloatPos(L, 1);
-	// content
 	const char *name = luaL_checkstring(L, 2);
-	// staticdata
 	const char *staticdata = luaL_optstring(L, 3, "");
-	// Do it
+
 	ServerActiveObject *obj = new LuaEntitySAO(env, pos, name, staticdata);
 	int objectid = env->addActiveObject(obj);
 	// If failed to add, return nothing (reads as nil)
 	if(objectid == 0)
 		return 0;
-	// Return ObjectRef
+
+	// If already deleted (can happen in on_activate), return nil
+	if (obj->isGone())
+		return 0;
 	getScriptApiBase(L)->objectrefGetOrCreate(L, obj);
 	return 1;
 }
@@ -780,8 +780,8 @@ int ModApiEnvMod::l_find_node_near(lua_State *L)
 
 #ifndef SERVER
 	// Client API limitations
-	if (getClient(L))
-		radius = getClient(L)->CSMClampRadius(pos, radius);
+	if (Client *client = getClient(L))
+		radius = client->CSMClampRadius(pos, radius);
 #endif
 
 	for (int d = start_radius; d <= radius; d++) {
@@ -811,9 +811,9 @@ int ModApiEnvMod::l_find_nodes_in_area(lua_State *L)
 	const NodeDefManager *ndef = env->getGameDef()->ndef();
 
 #ifndef SERVER
-	if (getClient(L)) {
-		minp = getClient(L)->CSMClampPos(minp);
-		maxp = getClient(L)->CSMClampPos(maxp);
+	if (Client *client = getClient(L)) {
+		minp = client->CSMClampPos(minp);
+		maxp = client->CSMClampPos(maxp);
 	}
 #endif
 
@@ -887,9 +887,9 @@ int ModApiEnvMod::l_find_nodes_in_area_under_air(lua_State *L)
 	const NodeDefManager *ndef = env->getGameDef()->ndef();
 
 #ifndef SERVER
-	if (getClient(L)) {
-		minp = getClient(L)->CSMClampPos(minp);
-		maxp = getClient(L)->CSMClampPos(maxp);
+	if (Client *client = getClient(L)) {
+		minp = client->CSMClampPos(minp);
+		maxp = client->CSMClampPos(maxp);
 	}
 #endif
 

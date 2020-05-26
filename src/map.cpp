@@ -144,7 +144,7 @@ bool Map::isNodeUnderground(v3s16 p)
 {
 	v3s16 blockpos = getNodeBlockPos(p);
 	MapBlock *block = getBlockNoCreateNoEx(blockpos);
-	return block && block->getIsUnderground(); 
+	return block && block->getIsUnderground();
 }
 
 bool Map::isValidPosition(v3s16 p)
@@ -568,7 +568,7 @@ void Map::transformLiquids(std::map<v3s16, MapBlock*> &modified_blocks,
 		switch (liquid_type) {
 			case LIQUID_SOURCE:
 				liquid_level = LIQUID_LEVEL_SOURCE;
-				liquid_kind = m_nodedef->getId(cf.liquid_alternative_flowing);
+				liquid_kind = cf.liquid_alternative_flowing_id;
 				break;
 			case LIQUID_FLOWING:
 				liquid_level = (n0.param2 & LIQUID_LEVEL_MASK);
@@ -641,8 +641,8 @@ void Map::transformLiquids(std::map<v3s16, MapBlock*> &modified_blocks,
 				case LIQUID_SOURCE:
 					// if this node is not (yet) of a liquid type, choose the first liquid type we encounter
 					if (liquid_kind == CONTENT_AIR)
-						liquid_kind = m_nodedef->getId(cfnb.liquid_alternative_flowing);
-					if (m_nodedef->getId(cfnb.liquid_alternative_flowing) != liquid_kind) {
+						liquid_kind = cfnb.liquid_alternative_flowing_id;
+					if (cfnb.liquid_alternative_flowing_id != liquid_kind) {
 						neutrals[num_neutrals++] = nb;
 					} else {
 						// Do not count bottom source, it will screw things up
@@ -653,8 +653,8 @@ void Map::transformLiquids(std::map<v3s16, MapBlock*> &modified_blocks,
 				case LIQUID_FLOWING:
 					// if this node is not (yet) of a liquid type, choose the first liquid type we encounter
 					if (liquid_kind == CONTENT_AIR)
-						liquid_kind = m_nodedef->getId(cfnb.liquid_alternative_flowing);
-					if (m_nodedef->getId(cfnb.liquid_alternative_flowing) != liquid_kind) {
+						liquid_kind = cfnb.liquid_alternative_flowing_id;
+					if (cfnb.liquid_alternative_flowing_id != liquid_kind) {
 						neutrals[num_neutrals++] = nb;
 					} else {
 						flows[num_flows++] = nb;
@@ -680,7 +680,7 @@ void Map::transformLiquids(std::map<v3s16, MapBlock*> &modified_blocks,
 			// liquid_kind will be set to either the flowing alternative of the node (if it's a liquid)
 			// or the flowing alternative of the first of the surrounding sources (if it's air), so
 			// it's perfectly safe to use liquid_kind here to determine the new node content.
-			new_node_content = m_nodedef->getId(m_nodedef->get(liquid_kind).liquid_alternative_source);
+			new_node_content = m_nodedef->get(liquid_kind).liquid_alternative_source_id;
 		} else if (num_sources >= 1 && sources[0].t != NEIGHBOR_LOWER) {
 			// liquid_kind is set properly, see above
 			max_node_level = new_node_level = LIQUID_LEVEL_MAX;
@@ -1187,7 +1187,7 @@ bool Map::isBlockOccluded(MapBlock *block, v3s16 cam_pos_nodes)
 	ServerMap
 */
 ServerMap::ServerMap(const std::string &savedir, IGameDef *gamedef,
-		EmergeManager *emerge):
+		EmergeManager *emerge, MetricsBackend *mb):
 	Map(dout_server, gamedef),
 	settings_mgr(g_settings, savedir + DIR_DELIM + "map_meta.txt"),
 	m_emerge(emerge)
@@ -1220,6 +1220,8 @@ ServerMap::ServerMap(const std::string &savedir, IGameDef *gamedef,
 
 	m_savedir = savedir;
 	m_map_saving_enabled = false;
+
+	m_save_time_counter = mb->addCounter("minetest_core_map_save_time", "Map save time (in nanoseconds)");
 
 	try {
 		// If directory exists, check contents and load if possible
@@ -1777,6 +1779,8 @@ void ServerMap::save(ModifiedState save_level)
 		return;
 	}
 
+	u64 start_time = porting::getTimeNs();
+
 	if(save_level == MOD_STATE_CLEAN)
 		infostream<<"ServerMap: Saving whole map, this can take time."
 				<<std::endl;
@@ -1835,6 +1839,9 @@ void ServerMap::save(ModifiedState save_level)
 		infostream<<"Blocks modified by: "<<std::endl;
 		modprofiler.print(infostream);
 	}
+
+	auto end_time = porting::getTimeNs();
+	m_save_time_counter->increment(end_time - start_time);
 }
 
 void ServerMap::listAllLoadableBlocks(std::vector<v3s16> &dst)
