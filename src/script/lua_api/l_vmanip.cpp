@@ -377,10 +377,12 @@ LuaVoxelManip::LuaVoxelManip(MMVManip *mmvm, bool is_mg_vm) :
 	is_mapgen_vm(is_mg_vm),
 	vm(mmvm)
 {
+	std::cerr << "LuaVoxelManip + " << this << " " << __LINE__ << "\n";
 }
 
 LuaVoxelManip::LuaVoxelManip(Map *map) : vm(new MMVManip(map))
 {
+	std::cerr << "LuaVoxelManip + " << this << " " << __LINE__ << "\n";
 }
 
 LuaVoxelManip::LuaVoxelManip(Map *map, v3s16 p1, v3s16 p2)
@@ -391,10 +393,19 @@ LuaVoxelManip::LuaVoxelManip(Map *map, v3s16 p1, v3s16 p2)
 	v3s16 bp2 = getNodeBlockPos(p2);
 	sortBoxVerticies(bp1, bp2);
 	vm->initialEmerge(bp1, bp2);
+	std::cerr << "LuaVoxelManip + " << this << " " << __LINE__ << "\n";
 }
+
+LuaVoxelManip::LuaVoxelManip(LuaVoxelManip const& copied)
+{
+	*this = copied;
+	std::cerr << "LuaVoxelManip + " << this << " " << __LINE__ << "\n";
+}
+
 
 LuaVoxelManip::~LuaVoxelManip()
 {
+	std::cerr << "LuaVoxelManip - " << this << " " << __LINE__ << "\n";
 	if (!is_mapgen_vm)
 		delete vm;
 }
