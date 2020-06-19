@@ -1666,6 +1666,7 @@ to games.
     * `2`: the node always gets the digging time 0.5 seconds (rail, sign)
     * `3`: the node always gets the digging time 0 seconds (torch)
 * `disable_jump`: Player (and possibly other things) cannot jump from node
+  or if their feet are in the node. Note: not supported for `new_move = false`
 * `fall_damage_add_percent`: damage speed = `speed * (1 + value/100)`
 * `falling_node`: if there is no walkable block under the node it will fall
 * `float`: the node will not fall through liquids
@@ -3005,6 +3006,24 @@ For the following functions `x` can be either a vector or a number:
     * Returns a scaled vector or Schur product.
 * `vector.divide(v, x)`:
     * Returns a scaled vector or Schur quotient.
+
+For the following functions `a` is an angle in radians and `r` is a rotation
+vector ({x = <pitch>, y = <yaw>, z = <roll>}) where pitch, yaw and roll are
+angles in radians.
+
+* `vector.rotate(v, r)`:
+    * Applies the rotation `r` to `v` and returns the result.
+    * `vector.rotate({x = 0, y = 0, z = 1}, r)` and
+      `vector.rotate({x = 0, y = 1, z = 0}, r)` return vectors pointing
+      forward and up relative to an entity's rotation `r`.
+* `vector.rotate_around_axis(v1, v2, a)`:
+    * Returns `v1` rotated around axis `v2` by `a` radians according to
+      the right hand rule.
+* `vector.dir_to_rotation(direction[, up])`:
+    * Returns a rotation vector for `direction` pointing forward using `up`
+      as the up vector.
+    * If `up` is omitted, the roll of the returned vector defaults to zero.
+    * Otherwise `direction` and `up` need to be vectors in a 90 degree angle to each other.
 
 
 
@@ -5198,6 +5217,20 @@ Server
     * Returns a code (0: successful, 1: no such player, 2: player is connected)
 * `minetest.remove_player_auth(name)`: remove player authentication data
     * Returns boolean indicating success (false if player nonexistant)
+* `minetest.dynamic_add_media(filepath)`
+    * Adds the file at the given path to the media sent to clients by the server
+      on startup and also pushes this file to already connected clients.
+      The file must be a supported image, sound or model format. It must not be
+      modified, deleted, moved or renamed after calling this function.
+      The list of dynamically added media is not persisted.
+    * Returns boolean indicating success (duplicate files count as error)
+    * The media will be ready to use (in e.g. entity textures, sound_play)
+      immediately after calling this function.
+      Old clients that lack support for this feature will not see the media
+      unless they reconnect to the server.
+    * Since media transferred this way does not use client caching or HTTP
+      transfers, dynamic media should not be used with big files or performance
+      will suffer.
 
 Bans
 ----
@@ -5475,6 +5508,13 @@ Misc.
 * `minetest.record_protection_violation(pos, name)`
     * This function calls functions registered with
       `minetest.register_on_protection_violation`.
+* `minetest.is_creative_enabled(name)`: returns boolean
+    * Returning `true` means that Creative Mode is enabled for player `name`.
+    * `name` will be `""` for non-players or if the player is unknown.
+    * This function should be overridden by Creative Mode-related mods to
+      implement a per-player Creative Mode.
+    * By default, this function returns `true` if the setting
+      `creative_mode` is `true` and `false` otherwise.
 * `minetest.is_area_protected(pos1, pos2, player_name, interval)`
     * Returns the position of the first node that `player_name` may not modify
       in the specified cuboid between `pos1` and `pos2`.
@@ -6066,13 +6106,14 @@ object you are working with still exists.
 * `get_formspec_prepend(formspec)`: returns a formspec string.
 * `get_player_control()`: returns table with player pressed keys
     * The table consists of fields with boolean value representing the pressed
-      keys, the fields are jump, right, left, LMB, RMB, sneak, aux1, down, up.
+      keys, the fields are jump, right, left, LMB, RMB, sneak, aux1, down, up, zoom.
     * example: `{jump=false, right=true, left=false, LMB=false, RMB=false,
-      sneak=true, aux1=false, down=false, up=false}`
+      sneak=true, aux1=false, down=false, up=false, zoom=false}`
+    * The `zoom` field is available since 5.3
 * `get_player_control_bits()`: returns integer with bit packed player pressed
   keys.
     * bit nr/meaning: 0/up, 1/down, 2/left, 3/right, 4/jump, 5/aux1, 6/sneak,
-      7/LMB, 8/RMB
+      7/LMB, 8/RMB, 9/zoom (zoom available since 5.3)
 * `set_physics_override(override_table)`
     * `override_table` is a table with the following fields:
         * `speed`: multiplier to default walking speed value (default: `1`)
@@ -6603,6 +6644,9 @@ Player properties need to be saved manually.
 
         damage_texture_modifier = "^[brighten",
         -- Texture modifier to be applied for a short duration when object is hit
+
+        shaded = true,
+        -- Setting this to 'false' disables diffuse lighting of entity
     }
 
 Entity definition
@@ -6933,7 +6977,7 @@ Used by `minetest.register_node`.
 
         visual_scale = 1.0,
         -- Supported for drawtypes "plantlike", "signlike", "torchlike",
-        -- "firelike", "mesh".
+        -- "firelike", "mesh", "nodebox", "allfaces".
         -- For plantlike and firelike, the image will start at the bottom of the
         -- node. For torchlike, the image will start at the surface to which the
         -- node "attaches". For the other drawtypes the image will be centered
