@@ -396,7 +396,7 @@ LuaVoxelManip::LuaVoxelManip(Map *map, v3s16 p1, v3s16 p2)
 	std::cerr << "LuaVoxelManip + " << this << " " << __LINE__ << "\n";
 }
 
-LuaVoxelManip::LuaVoxelManip(LuaVoxelManip const& copied)
+LuaVoxelManip::LuaVoxelManip(LuaVoxelManip const &copied)
 {
 	*this = copied;
 	std::cerr << "LuaVoxelManip + " << this << " " << __LINE__ << "\n";
