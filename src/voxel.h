@@ -355,7 +355,8 @@ enum VoxelPrintMode
 class VoxelManipulator
 {
 public:
-	VoxelManipulator() = default;
+	VoxelManipulator();
+	VoxelManipulator(VoxelManipulator const &copied);
 	virtual ~VoxelManipulator();
 
 	/*

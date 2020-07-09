@@ -33,9 +33,21 @@ u64 emerge_time = 0;
 u64 emerge_load_time = 0;
 u64 clearflag_time = 0;
 
+VoxelManipulator::VoxelManipulator()
+{
+	std::cerr << "VoxelManipulator + " << this << " " << __LINE__ << "\n";
+}
+
+VoxelManipulator::VoxelManipulator(VoxelManipulator const &copied)
+{
+	*this = copied;
+	std::cerr << "VoxelManipulator + " << this << " " << __LINE__ << "\n";
+}
+
 VoxelManipulator::~VoxelManipulator()
 {
 	clear();
+	std::cerr << "VoxelManipulator - " << this << " " << __LINE__ << "\n";
 }
 
 void VoxelManipulator::clear()
