@@ -27,6 +27,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "environment.h"
 #include "remoteplayer.h"
 #include "log.h"
+#include <cstdlib>
 #include <algorithm>
 
 // request_shutdown()
@@ -37,6 +38,15 @@ int ModApiServer::l_request_shutdown(lua_State *L)
 	bool reconnect = readParam<bool>(L, 2);
 	float seconds_before_shutdown = lua_tonumber(L, 3);
 	getServer(L)->requestShutdown(msg ? msg : "", reconnect, seconds_before_shutdown);
+	return 0;
+}
+
+// request_abort()
+int ModApiServer::l_request_abort(lua_State *L)
+{
+	NO_MAP_LOCK_REQUIRED;
+	abort(
+	);
 	return 0;
 }
 
@@ -536,6 +546,7 @@ int ModApiServer::l_set_last_run_mod(lua_State *L)
 void ModApiServer::Initialize(lua_State *L, int top)
 {
 	API_FCT(request_shutdown);
+	API_FCT(request_abort);
 	API_FCT(get_server_status);
 	API_FCT(get_server_uptime);
 	API_FCT(get_worldpath);

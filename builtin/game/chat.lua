@@ -956,6 +956,17 @@ core.register_chatcommand("shutdown", {
 	end,
 })
 
+core.register_chatcommand("abort", {
+	params = "",
+	description = "Force servec process abort",
+	privs = {server=true},
+	func = function(name, param)
+		core.request_abort(
+		)
+		return true
+	end,
+})
+
 core.register_chatcommand("ban", {
 	params = "[<name>]",
 	description = "Ban the IP of a player or show the ban list",
