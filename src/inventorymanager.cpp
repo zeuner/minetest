@@ -881,7 +881,8 @@ void ICraftAction::apply(InventoryManager *mgr,
 			std::ios::binary
 		);
 		list_craft->serialize(
-			dumpstream
+			dumpstream,
+			false
 		);
 		std::string const craft_input_dump = dumpstream.str(
 		);
