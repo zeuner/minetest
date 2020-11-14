@@ -877,9 +877,20 @@ void ICraftAction::apply(InventoryManager *mgr,
 			output_replacements.push_back(itemstack);
 		}
 
+		std::ostringstream dumpstream(
+			std::ios::binary
+		);
+		list_craft->serialize(
+			dumpstream
+		);
+		std::string const craft_input_dump = dumpstream.str(
+		);
+
 		actionstream << player->getDescription()
 				<< " crafts "
 				<< crafted.getItemString()
+				<< " from "
+				<< craft_input_dump
 				<< std::endl;
 
 		// Decrement counter
