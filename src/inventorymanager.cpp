@@ -857,6 +857,16 @@ void ICraftAction::apply(InventoryManager *mgr,
 	while (found && list_craftresult->itemFits(0, crafted)) {
 		InventoryList saved_craft_list = *list_craft;
 
+		std::ostringstream dumpstream(
+			std::ios::binary
+		);
+		list_craft->serialize(
+			dumpstream,
+			false
+		);
+		std::string const craft_input_dump = dumpstream.str(
+		);
+
 		std::vector<ItemStack> temp;
 		// Decrement input and add crafting output
 		getCraftingResult(inv_craft, crafted, temp, true, gamedef);
@@ -876,16 +886,6 @@ void ICraftAction::apply(InventoryManager *mgr,
 			}
 			output_replacements.push_back(itemstack);
 		}
-
-		std::ostringstream dumpstream(
-			std::ios::binary
-		);
-		list_craft->serialize(
-			dumpstream,
-			false
-		);
-		std::string const craft_input_dump = dumpstream.str(
-		);
 
 		actionstream << player->getDescription()
 				<< " crafts "
