@@ -61,6 +61,7 @@ local flag_checkboxes = {
 		fgettext("Low humidity and high heat causes shallow or dry rivers") },
 	},
 	flat = {
+		cb_caverns,
 		{ "hills", fgettext("Hills"), "hills" },
 		{ "lakes", fgettext("Lakes"), "lakes" },
 	},
@@ -97,7 +98,7 @@ local function create_world_formspec(dialogdata)
 	-- Error out when no games found
 	if #pkgmgr.games == 0 then
 		return "size[12.25,3,true]" ..
-			"box[0,0;12,2;#ff8800]" ..
+			"box[0,0;12,2;" .. mt_color_orange .. "]" ..
 			"textarea[0.3,0;11.7,2;;;"..
 			fgettext("You have no games installed.") .. "\n" ..
 			fgettext("Download one from minetest.net") .. "]" ..
@@ -304,13 +305,13 @@ local function create_world_formspec(dialogdata)
 		label_spflags = "label[0,"..y_start..";" .. fgettext("Mapgen-specific flags") .. "]"
 	end
 
-	-- Warning if only minimal is installed
-	local minimal_only = ""
+	-- Warning if only devtest is installed
+	local devtest_only = ""
 	local gamelist_height = 2.3
-	if #pkgmgr.games == 1 and pkgmgr.games[1].id == "minimal" then
-		minimal_only = "box[0,0;5.8,1.7;#ff8800]" ..
+	if #pkgmgr.games == 1 and pkgmgr.games[1].id == "devtest" then
+		devtest_only = "box[0,0;5.8,1.7;#ff8800]" ..
 				"textarea[0.3,0;6,1.8;;;"..
-				fgettext("Warning: The minimal development test is meant for developers.") .. "\n" ..
+				fgettext("Warning: The Development Test is meant for developers.") .. "\n" ..
 				fgettext("Download a game, such as Minetest Game, from minetest.net") .. "]"
 		gamelist_height = 0.5
 	end
@@ -335,7 +336,7 @@ local function create_world_formspec(dialogdata)
 		"textlist[0,3.85;5.8,"..gamelist_height..";games;" ..
 		pkgmgr.gamelist() .. ";" .. gameidx .. ";false]" ..
 		"container[0,4.5]" ..
-		minimal_only ..
+		devtest_only ..
 		"container_end[]" ..
 		"container_end[]" ..
 
@@ -362,10 +363,18 @@ local function create_world_buttonhandler(this, fields)
 		local gameindex = core.get_textlist_index("games")
 
 		if gameindex ~= nil then
+			-- For unnamed worlds use the generated name 'world<number>',
+			-- where the number increments: it is set to 1 larger than the largest
+			-- generated name number found.
 			if worldname == "" then
-				local random_number = math.random(10000, 99999)
-				local random_world_name = "Unnamed" .. random_number
-				worldname = random_world_name
+				local worldnum_max = 0
+				for _, world in ipairs(menudata.worldlist:get_list()) do
+					if world.name:match("^world%d+$") then
+						local worldnum = tonumber(world.name:sub(6))
+						worldnum_max = math.max(worldnum_max, worldnum)
+					end
+				end
+				worldname = "world" .. worldnum_max + 1
 			end
 
 			core.settings:set("fixed_map_seed", fields["te_seed"])
@@ -434,7 +443,7 @@ local function create_world_buttonhandler(this, fields)
 	end
 
 	if fields["mgv6_biomes"] then
-		local entry = minetest.formspec_escape(fields["mgv6_biomes"])
+		local entry = core.formspec_escape(fields["mgv6_biomes"])
 		for b=1, #mgv6_biomes do
 			if entry == mgv6_biomes[b][1] then
 				local ftable = core.settings:get_flags("mgv6_spflags")

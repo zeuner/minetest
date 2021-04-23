@@ -157,7 +157,7 @@ end
 
 function core.is_colored_paramtype(ptype)
 	return (ptype == "color") or (ptype == "colorfacedir") or
-		(ptype == "colorwallmounted")
+		(ptype == "colorwallmounted") or (ptype == "colordegrotate")
 end
 
 function core.strip_param2_color(param2, paramtype2)
@@ -168,6 +168,8 @@ function core.strip_param2_color(param2, paramtype2)
 		param2 = math.floor(param2 / 32) * 32
 	elseif paramtype2 == "colorwallmounted" then
 		param2 = math.floor(param2 / 8) * 8
+	elseif paramtype2 == "colordegrotate" then
+		param2 = math.floor(param2 / 32) * 32
 	end
 	-- paramtype2 == "color" requires no modification.
 	return param2
@@ -344,6 +346,8 @@ function core.item_place_node(itemstack, placer, pointed_thing, param2,
 		elseif def.paramtype2 == "colorwallmounted" then
 			color_divisor = 8
 		elseif def.paramtype2 == "colorfacedir" then
+			color_divisor = 32
+		elseif def.paramtype2 == "colordegrotate" then
 			color_divisor = 32
 		end
 		if color_divisor then
@@ -551,12 +555,13 @@ function core.node_dig(pos, node, digger)
 	local diggername = user_name(digger)
 	local log = make_log(diggername)
 	local def = core.registered_nodes[node.name]
+	-- Copy pos because the callback could modify it
 	if def and (not def.diggable or
-			(def.can_dig and not def.can_dig(pos, digger))) then
+			(def.can_dig and not def.can_dig(vector.new(pos), digger))) then
 		log("info", diggername .. " tried to dig "
 			.. node.name .. " which is not diggable "
 			.. core.pos_to_string(pos))
-		return
+		return false
 	end
 
 	if core.is_protected(pos, diggername) then
@@ -565,7 +570,7 @@ function core.node_dig(pos, node, digger)
 				.. " at protected position "
 				.. core.pos_to_string(pos))
 		core.record_protection_violation(pos, diggername)
-		return
+		return false
 	end
 
 	log('action', diggername .. " digs "
@@ -582,7 +587,7 @@ function core.node_dig(pos, node, digger)
 			wielded = wdef.after_use(wielded, digger, node, dp) or wielded
 		else
 			-- Wear out tool
-			if not core.settings:get_bool("creative_mode") then
+			if not core.is_creative_enabled(diggername) then
 				wielded:add_wear(dp.wear)
 				if wielded:get_count() == 0 and wdef.sound and wdef.sound.breaks then
 					core.sound_play(wdef.sound.breaks, {
@@ -648,6 +653,8 @@ function core.node_dig(pos, node, digger)
 		local node_copy = {name=node.name, param1=node.param1, param2=node.param2}
 		callback(pos_copy, node_copy, digger)
 	end
+
+	return true
 end
 
 function core.itemstring_with_palette(item, palette_index)
@@ -675,7 +682,7 @@ end
 -- Item definition defaults
 --
 
-local default_stack_max = tonumber(minetest.settings:get("default_stack_max")) or 99
+local default_stack_max = tonumber(core.settings:get("default_stack_max")) or 99
 
 core.nodedef_default = {
 	-- Item properties
@@ -704,10 +711,6 @@ core.nodedef_default = {
 
 	on_receive_fields = nil,
 
-	on_metadata_inventory_move = core.node_metadata_inventory_move_allow_all,
-	on_metadata_inventory_offer = core.node_metadata_inventory_offer_allow_all,
-	on_metadata_inventory_take = core.node_metadata_inventory_take_allow_all,
-
 	-- Node properties
 	drawtype = "normal",
 	visual_scale = 1.0,
@@ -718,7 +721,6 @@ core.nodedef_default = {
 	--	{name="", backface_culling=true},
 	--	{name="", backface_culling=true},
 	--},
-	alpha = 255,
 	post_effect_color = {a=0, r=0, g=0, b=0},
 	paramtype = "none",
 	paramtype2 = "none",

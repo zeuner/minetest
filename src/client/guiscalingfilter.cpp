@@ -102,7 +102,7 @@ video::ITexture *guiScalingResizeCached(video::IVideoDriver *driver,
 		if (!g_settings->getBool("gui_scaling_filter_txr2img"))
 			return src;
 		srcimg = driver->createImageFromData(src->getColorFormat(),
-			src->getSize(), src->lock(), false);
+			src->getSize(), src->lock(video::ETLM_READ_ONLY), false);
 		src->unlock();
 		g_imgCache[origname] = srcimg;
 	}
@@ -129,7 +129,7 @@ video::ITexture *guiScalingResizeCached(video::IVideoDriver *driver,
 #endif
 
 	// Convert the scaled image back into a texture.
-	scaled = driver->addTexture(scalename, destimg, NULL);
+	scaled = driver->addTexture(scalename, destimg);
 	destimg->drop();
 	g_txrCache[scalename] = scaled;
 
@@ -172,11 +172,8 @@ void draw2DImageFilterScaled(video::IVideoDriver *driver, video::ITexture *txr,
 
 void draw2DImage9Slice(video::IVideoDriver *driver, video::ITexture *texture,
 		const core::rect<s32> &rect, const core::rect<s32> &middle,
-		const core::rect<s32> *cliprect)
+		const core::rect<s32> *cliprect, const video::SColor *const colors)
 {
-	const video::SColor color(255,255,255,255);
-	const video::SColor colors[] = {color,color,color,color};
-
 	auto originalSize = texture->getOriginalSize();
 	core::vector2di lowerRightOffset = core::vector2di(originalSize.Width, originalSize.Height) - middle.LowerRightCorner;
 

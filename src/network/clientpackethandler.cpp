@@ -39,6 +39,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "script/scripting_client.h"
 #include "util/serialize.h"
 #include "util/srp.h"
+#include "util/sha1.h"
 #include "tileanimation.h"
 #include "gettext.h"
 #include "skyparams.h"
@@ -207,6 +208,9 @@ void Client::handleCommand_AccessDenied(NetworkPacket* pkt)
 		m_access_denied_reconnect = reconnect & 1;
 	} else if (denyCode == SERVER_ACCESSDENIED_CUSTOM_STRING) {
 		*pkt >> m_access_denied_reason;
+	} else if (denyCode == SERVER_ACCESSDENIED_TOO_MANY_USERS) {
+		m_access_denied_reason = accessDeniedStrings[denyCode];
+		m_access_denied_reconnect = true;
 	} else if (denyCode < SERVER_ACCESSDENIED_MAX) {
 		m_access_denied_reason = accessDeniedStrings[denyCode];
 	} else {
@@ -493,7 +497,7 @@ void Client::handleCommand_ActiveObjectMessages(NetworkPacket* pkt)
 			if (!is.good())
 				break;
 
-			std::string message = deSerializeString(is);
+			std::string message = deSerializeString16(is);
 
 			// Pass on to the environment
 			m_env.processActiveObjectMessage(id, message);
@@ -958,114 +962,66 @@ void Client::handleCommand_SpawnParticle(NetworkPacket* pkt)
 	std::string datastring(pkt->getString(0), pkt->getSize());
 	std::istringstream is(datastring, std::ios_base::binary);
 
-	v3f pos                 = readV3F32(is);
-	v3f vel                 = readV3F32(is);
-	v3f acc                 = readV3F32(is);
-	float expirationtime    = readF32(is);
-	float size              = readF32(is);
-	bool collisiondetection = readU8(is);
-	std::string texture     = deSerializeLongString(is);
-
-	bool vertical          = false;
-	bool collision_removal = false;
-	TileAnimationParams animation;
-	animation.type         = TAT_NONE;
-	u8 glow                = 0;
-	bool object_collision  = false;
-	try {
-		vertical = readU8(is);
-		collision_removal = readU8(is);
-		animation.deSerialize(is, m_proto_ver);
-		glow = readU8(is);
-		object_collision = readU8(is);
-	} catch (...) {}
+	ParticleParameters p;
+	p.deSerialize(is, m_proto_ver);
 
 	ClientEvent *event = new ClientEvent();
-	event->type                              = CE_SPAWN_PARTICLE;
-	event->spawn_particle.pos                = new v3f (pos);
-	event->spawn_particle.vel                = new v3f (vel);
-	event->spawn_particle.acc                = new v3f (acc);
-	event->spawn_particle.expirationtime     = expirationtime;
-	event->spawn_particle.size               = size;
-	event->spawn_particle.collisiondetection = collisiondetection;
-	event->spawn_particle.collision_removal  = collision_removal;
-	event->spawn_particle.object_collision   = object_collision;
-	event->spawn_particle.vertical           = vertical;
-	event->spawn_particle.texture            = new std::string(texture);
-	event->spawn_particle.animation          = animation;
-	event->spawn_particle.glow               = glow;
+	event->type           = CE_SPAWN_PARTICLE;
+	event->spawn_particle = new ParticleParameters(p);
 
 	m_client_event_queue.push(event);
 }
 
 void Client::handleCommand_AddParticleSpawner(NetworkPacket* pkt)
 {
-	u16 amount;
-	float spawntime;
-	v3f minpos;
-	v3f maxpos;
-	v3f minvel;
-	v3f maxvel;
-	v3f minacc;
-	v3f maxacc;
-	float minexptime;
-	float maxexptime;
-	float minsize;
-	float maxsize;
-	bool collisiondetection;
+	std::string datastring(pkt->getString(0), pkt->getSize());
+	std::istringstream is(datastring, std::ios_base::binary);
+
+	ParticleSpawnerParameters p;
 	u32 server_id;
+	u16 attached_id = 0;
 
-	*pkt >> amount >> spawntime >> minpos >> maxpos >> minvel >> maxvel
-		>> minacc >> maxacc >> minexptime >> maxexptime >> minsize
-		>> maxsize >> collisiondetection;
+	p.amount             = readU16(is);
+	p.time               = readF32(is);
+	p.minpos             = readV3F32(is);
+	p.maxpos             = readV3F32(is);
+	p.minvel             = readV3F32(is);
+	p.maxvel             = readV3F32(is);
+	p.minacc             = readV3F32(is);
+	p.maxacc             = readV3F32(is);
+	p.minexptime         = readF32(is);
+	p.maxexptime         = readF32(is);
+	p.minsize            = readF32(is);
+	p.maxsize            = readF32(is);
+	p.collisiondetection = readU8(is);
+	p.texture            = deSerializeString32(is);
 
-	std::string texture = pkt->readLongString();
+	server_id = readU32(is);
 
-	*pkt >> server_id;
+	p.vertical = readU8(is);
+	p.collision_removal = readU8(is);
 
-	bool vertical          = false;
-	bool collision_removal = false;
-	u16 attached_id        = 0;
-	TileAnimationParams animation;
-	animation.type         = TAT_NONE;
-	u8 glow                = 0;
-	bool object_collision  = false;
-	try {
-		*pkt >> vertical;
-		*pkt >> collision_removal;
-		*pkt >> attached_id;
+	attached_id = readU16(is);
 
-		// This is horrible but required (why are there two ways to deserialize pkts?)
-		std::string datastring(pkt->getRemainingString(), pkt->getRemainingBytes());
-		std::istringstream is(datastring, std::ios_base::binary);
-		animation.deSerialize(is, m_proto_ver);
-		glow = readU8(is);
-		object_collision = readU8(is);
-	} catch (...) {}
+	p.animation.deSerialize(is, m_proto_ver);
+	p.glow = readU8(is);
+	p.object_collision = readU8(is);
+
+	// This is kinda awful
+	do {
+		u16 tmp_param0 = readU16(is);
+		if (is.eof())
+			break;
+		p.node.param0 = tmp_param0;
+		p.node.param2 = readU8(is);
+		p.node_tile   = readU8(is);
+	} while (0);
 
 	auto event = new ClientEvent();
-	event->type                                   = CE_ADD_PARTICLESPAWNER;
-	event->add_particlespawner.amount             = amount;
-	event->add_particlespawner.spawntime          = spawntime;
-	event->add_particlespawner.minpos             = new v3f (minpos);
-	event->add_particlespawner.maxpos             = new v3f (maxpos);
-	event->add_particlespawner.minvel             = new v3f (minvel);
-	event->add_particlespawner.maxvel             = new v3f (maxvel);
-	event->add_particlespawner.minacc             = new v3f (minacc);
-	event->add_particlespawner.maxacc             = new v3f (maxacc);
-	event->add_particlespawner.minexptime         = minexptime;
-	event->add_particlespawner.maxexptime         = maxexptime;
-	event->add_particlespawner.minsize            = minsize;
-	event->add_particlespawner.maxsize            = maxsize;
-	event->add_particlespawner.collisiondetection = collisiondetection;
-	event->add_particlespawner.collision_removal  = collision_removal;
-	event->add_particlespawner.object_collision   = object_collision;
-	event->add_particlespawner.attached_id        = attached_id;
-	event->add_particlespawner.vertical           = vertical;
-	event->add_particlespawner.texture            = new std::string(texture);
-	event->add_particlespawner.id                 = server_id;
-	event->add_particlespawner.animation          = animation;
-	event->add_particlespawner.glow               = glow;
+	event->type                            = CE_ADD_PARTICLESPAWNER;
+	event->add_particlespawner.p           = new ParticleSpawnerParameters(p);
+	event->add_particlespawner.attached_id = attached_id;
+	event->add_particlespawner.id          = server_id;
 
 	m_client_event_queue.push(event);
 }
@@ -1085,9 +1041,6 @@ void Client::handleCommand_DeleteParticleSpawner(NetworkPacket* pkt)
 
 void Client::handleCommand_HudAdd(NetworkPacket* pkt)
 {
-	std::string datastring(pkt->getString(0), pkt->getSize());
-	std::istringstream is(datastring, std::ios_base::binary);
-
 	u32 server_id;
 	u8 type;
 	v2f pos;
@@ -1114,22 +1067,23 @@ void Client::handleCommand_HudAdd(NetworkPacket* pkt)
 	} catch(PacketError &e) {};
 
 	ClientEvent *event = new ClientEvent();
-	event->type             = CE_HUDADD;
-	event->hudadd.server_id = server_id;
-	event->hudadd.type      = type;
-	event->hudadd.pos       = new v2f(pos);
-	event->hudadd.name      = new std::string(name);
-	event->hudadd.scale     = new v2f(scale);
-	event->hudadd.text      = new std::string(text);
-	event->hudadd.number    = number;
-	event->hudadd.item      = item;
-	event->hudadd.dir       = dir;
-	event->hudadd.align     = new v2f(align);
-	event->hudadd.offset    = new v2f(offset);
-	event->hudadd.world_pos = new v3f(world_pos);
-	event->hudadd.size      = new v2s32(size);
-	event->hudadd.z_index   = z_index;
-	event->hudadd.text2     = new std::string(text2);
+	event->type              = CE_HUDADD;
+	event->hudadd            = new ClientEventHudAdd();
+	event->hudadd->server_id = server_id;
+	event->hudadd->type      = type;
+	event->hudadd->pos       = pos;
+	event->hudadd->name      = name;
+	event->hudadd->scale     = scale;
+	event->hudadd->text      = text;
+	event->hudadd->number    = number;
+	event->hudadd->item      = item;
+	event->hudadd->dir       = dir;
+	event->hudadd->align     = align;
+	event->hudadd->offset    = offset;
+	event->hudadd->world_pos = world_pos;
+	event->hudadd->size      = size;
+	event->hudadd->z_index   = z_index;
+	event->hudadd->text2     = text2;
 	m_client_event_queue.push(event);
 }
 
@@ -1139,16 +1093,10 @@ void Client::handleCommand_HudRemove(NetworkPacket* pkt)
 
 	*pkt >> server_id;
 
-	auto i = m_hud_server_to_client.find(server_id);
-	if (i != m_hud_server_to_client.end()) {
-		int client_id = i->second;
-		m_hud_server_to_client.erase(i);
-
-		ClientEvent *event = new ClientEvent();
-		event->type     = CE_HUDRM;
-		event->hudrm.id = client_id;
-		m_client_event_queue.push(event);
-	}
+	ClientEvent *event = new ClientEvent();
+	event->type     = CE_HUDRM;
+	event->hudrm.id = server_id;
+	m_client_event_queue.push(event);
 }
 
 void Client::handleCommand_HudChange(NetworkPacket* pkt)
@@ -1175,19 +1123,17 @@ void Client::handleCommand_HudChange(NetworkPacket* pkt)
 	else
 		*pkt >> intdata;
 
-	std::unordered_map<u32, u32>::const_iterator i = m_hud_server_to_client.find(server_id);
-	if (i != m_hud_server_to_client.end()) {
-		ClientEvent *event = new ClientEvent();
-		event->type              = CE_HUDCHANGE;
-		event->hudchange.id      = i->second;
-		event->hudchange.stat    = (HudElementStat)stat;
-		event->hudchange.v2fdata = new v2f(v2fdata);
-		event->hudchange.v3fdata = new v3f(v3fdata);
-		event->hudchange.sdata   = new std::string(sdata);
-		event->hudchange.data    = intdata;
-		event->hudchange.v2s32data = new v2s32(v2s32data);
-		m_client_event_queue.push(event);
-	}
+	ClientEvent *event = new ClientEvent();
+	event->type                 = CE_HUDCHANGE;
+	event->hudchange            = new ClientEventHudChange();
+	event->hudchange->id        = server_id;
+	event->hudchange->stat      = static_cast<HudElementStat>(stat);
+	event->hudchange->v2fdata   = v2fdata;
+	event->hudchange->v3fdata   = v3fdata;
+	event->hudchange->sdata     = sdata;
+	event->hudchange->data      = intdata;
+	event->hudchange->v2s32data = v2s32data;
+	m_client_event_queue.push(event);
 }
 
 void Client::handleCommand_HudSetFlags(NetworkPacket* pkt)
@@ -1208,15 +1154,24 @@ void Client::handleCommand_HudSetFlags(NetworkPacket* pkt)
 	m_minimap_disabled_by_server = !(player->hud_flags & HUD_FLAG_MINIMAP_VISIBLE);
 	bool m_minimap_radar_disabled_by_server = !(player->hud_flags & HUD_FLAG_MINIMAP_RADAR_VISIBLE);
 
+	// Not so satisying code to keep compatibility with old fixed mode system
+	// -->
+
 	// Hide minimap if it has been disabled by the server
 	if (m_minimap && m_minimap_disabled_by_server && was_minimap_visible)
 		// defers a minimap update, therefore only call it if really
 		// needed, by checking that minimap was visible before
-		m_minimap->setMinimapMode(MINIMAP_MODE_OFF);
+		m_minimap->setModeIndex(0);
 
-	// Switch to surface mode if radar disabled by server
-	if (m_minimap && m_minimap_radar_disabled_by_server && was_minimap_radar_visible)
-		m_minimap->setMinimapMode(MINIMAP_MODE_SURFACEx1);
+	// If radar has been disabled, try to find a non radar mode or fall back to 0
+	if (m_minimap && m_minimap_radar_disabled_by_server
+			&& was_minimap_radar_visible) {
+		while (m_minimap->getModeIndex() > 0 &&
+				m_minimap->getModeDef().type == MINIMAP_TYPE_RADAR)
+			m_minimap->nextMode();
+	}
+	// <--
+	// End of 'not so satifying code'
 }
 
 void Client::handleCommand_HudSetParam(NetworkPacket* pkt)
@@ -1251,11 +1206,11 @@ void Client::handleCommand_HudSetSky(NetworkPacket* pkt)
 
 		SkyboxParams skybox;
 		skybox.bgcolor = video::SColor(readARGB8(is));
-		skybox.type = std::string(deSerializeString(is));
+		skybox.type = std::string(deSerializeString16(is));
 		u16 count = readU16(is);
 
 		for (size_t i = 0; i < count; i++)
-			skybox.textures.emplace_back(deSerializeString(is));
+			skybox.textures.emplace_back(deSerializeString16(is));
 
 		skybox.clouds = true;
 		try {
@@ -1519,6 +1474,51 @@ void Client::handleCommand_PlayerSpeed(NetworkPacket *pkt)
 	player->addVelocity(added_vel);
 }
 
+void Client::handleCommand_MediaPush(NetworkPacket *pkt)
+{
+	std::string raw_hash, filename, filedata;
+	bool cached;
+
+	*pkt >> raw_hash >> filename >> cached;
+	filedata = pkt->readLongString();
+
+	if (raw_hash.size() != 20 || filedata.empty() || filename.empty() ||
+			!string_allowed(filename, TEXTURENAME_ALLOWED_CHARS)) {
+		throw PacketError("Illegal filename, data or hash");
+	}
+
+	verbosestream << "Server pushes media file \"" << filename << "\" with "
+		<< filedata.size() << " bytes of data (cached=" << cached
+		<< ")" << std::endl;
+
+	if (m_media_pushed_files.count(filename) != 0) {
+		// Silently ignore for synchronization purposes
+		return;
+	}
+
+	// Compute and check checksum of data
+	std::string computed_hash;
+	{
+		SHA1 ctx;
+		ctx.addBytes(filedata.c_str(), filedata.size());
+		unsigned char *buf = ctx.getDigest();
+		computed_hash.assign((char*) buf, 20);
+		free(buf);
+	}
+	if (raw_hash != computed_hash) {
+		verbosestream << "Hash of file data mismatches, ignoring." << std::endl;
+		return;
+	}
+
+	// Actually load media
+	loadMedia(filedata, filename, true);
+	m_media_pushed_files.insert(filename);
+
+	// Cache file for the next time when this client joins the same server
+	if (cached)
+		clientMediaUpdateCache(raw_hash, filedata);
+}
+
 /*
  * Mod channels
  */
@@ -1609,4 +1609,31 @@ void Client::handleCommand_ModChannelSignal(NetworkPacket *pkt)
 	// If signal is valid, forward it to client side mods
 	if (valid_signal)
 		m_script->on_modchannel_signal(channel, signal);
+}
+
+void Client::handleCommand_MinimapModes(NetworkPacket *pkt)
+{
+	u16 count; // modes
+	u16 mode;  // wanted current mode index after change
+
+	*pkt >> count >> mode;
+
+	if (m_minimap)
+		m_minimap->clearModes();
+
+	for (size_t index = 0; index < count; index++) {
+		u16 type;
+		std::string label;
+		u16 size;
+		std::string texture;
+		u16 scale;
+
+		*pkt >> type >> label >> size >> texture >> scale;
+
+		if (m_minimap)
+			m_minimap->addMode(MinimapType(type), size, label, texture, scale);
+	}
+
+	if (m_minimap)
+		m_minimap->setModeIndex(mode);
 }

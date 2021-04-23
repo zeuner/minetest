@@ -52,6 +52,7 @@ core.register_entity(":__builtin:falling_node", {
 	floats = false,
 
 	set_node = function(self, node, meta)
+		node.param2 = node.param2 or 0
 		self.node = node
 		meta = meta or {}
 		if type(meta.to_table) == "function" then
@@ -109,6 +110,7 @@ core.register_entity(":__builtin:falling_node", {
 			if core.is_colored_paramtype(def.paramtype2) then
 				itemstring = core.itemstring_with_palette(itemstring, node.param2)
 			end
+			-- FIXME: solution needed for paramtype2 == "leveled"
 			local vsize
 			if def.visual_scale then
 				local s = def.visual_scale * SCALE
@@ -122,11 +124,29 @@ core.register_entity(":__builtin:falling_node", {
 			})
 		end
 
+		-- Set collision box (certain nodeboxes only for now)
+		local nb_types = {fixed=true, leveled=true, connected=true}
+		if def.drawtype == "nodebox" and def.node_box and
+			nb_types[def.node_box.type] and def.node_box.fixed then
+			local box = table.copy(def.node_box.fixed)
+			if type(box[1]) == "table" then
+				box = #box == 1 and box[1] or nil -- We can only use a single box
+			end
+			if box then
+				if def.paramtype2 == "leveled" and (self.node.level or 0) > 0 then
+					box[5] = -0.5 + self.node.level / 64
+				end
+				self.object:set_properties({
+					collisionbox = box
+				})
+			end
+		end
+
 		-- Rotate entity
 		if def.drawtype == "torchlike" then
 			self.object:set_yaw(math.pi*0.25)
-		elseif (node.param2 ~= 0 and (def.wield_image == ""
-				or def.wield_image == nil))
+		elseif ((node.param2 ~= 0 or def.drawtype == "nodebox" or def.drawtype == "mesh")
+				and (def.wield_image == "" or def.wield_image == nil))
 				or def.drawtype == "signlike"
 				or def.drawtype == "mesh"
 				or def.drawtype == "normal"
@@ -138,19 +158,37 @@ core.register_entity(":__builtin:falling_node", {
 				if euler then
 					self.object:set_rotation(euler)
 				end
-			elseif (def.paramtype2 == "wallmounted" or def.paramtype2 == "colorwallmounted") then
+			elseif (def.paramtype2 == "wallmounted" or def.paramtype2 == "colorwallmounted" or def.drawtype == "signlike") then
 				local rot = node.param2 % 8
+				if (def.drawtype == "signlike" and def.paramtype2 ~= "wallmounted" and def.paramtype2 ~= "colorwallmounted") then
+					-- Change rotation to "floor" by default for non-wallmounted paramtype2
+					rot = 1
+				end
 				local pitch, yaw, roll = 0, 0, 0
-				if rot == 1 then
-					pitch, yaw = math.pi, math.pi
-				elseif rot == 2 then
-					pitch, yaw = math.pi/2, math.pi/2
-				elseif rot == 3 then
-					pitch, yaw = math.pi/2, -math.pi/2
-				elseif rot == 4 then
-					pitch, yaw = math.pi/2, math.pi
-				elseif rot == 5 then
-					pitch, yaw = math.pi/2, 0
+				if def.drawtype == "nodebox" or def.drawtype == "mesh" then
+					if rot == 0 then
+						pitch, yaw = math.pi/2, 0
+					elseif rot == 1 then
+						pitch, yaw = -math.pi/2, math.pi
+					elseif rot == 2 then
+						pitch, yaw = 0, math.pi/2
+					elseif rot == 3 then
+						pitch, yaw = 0, -math.pi/2
+					elseif rot == 4 then
+						pitch, yaw = 0, math.pi
+					end
+				else
+					if rot == 1 then
+						pitch, yaw = math.pi, math.pi
+					elseif rot == 2 then
+						pitch, yaw = math.pi/2, math.pi/2
+					elseif rot == 3 then
+						pitch, yaw = math.pi/2, -math.pi/2
+					elseif rot == 4 then
+						pitch, yaw = math.pi/2, math.pi
+					elseif rot == 5 then
+						pitch, yaw = math.pi/2, 0
+					end
 				end
 				if def.drawtype == "signlike" then
 					pitch = pitch - math.pi/2
@@ -159,7 +197,7 @@ core.register_entity(":__builtin:falling_node", {
 					elseif rot == 1 then
 						yaw = yaw - math.pi/2
 					end
-				elseif def.drawtype == "mesh" or def.drawtype == "normal" then
+				elseif def.drawtype == "mesh" or def.drawtype == "normal" or def.drawtype == "nodebox" then
 					if rot >= 0 and rot <= 1 then
 						roll = roll + math.pi
 					else
@@ -196,13 +234,16 @@ core.register_entity(":__builtin:falling_node", {
 	try_place = function(self, bcp, bcn)
 		local bcd = core.registered_nodes[bcn.name]
 		-- Add levels if dropped on same leveled node
-		if bcd and bcd.leveled and
+		if bcd and bcd.paramtype2 == "leveled" and
 				bcn.name == self.node.name then
 			local addlevel = self.node.level
-			if not addlevel or addlevel <= 0 then
+			if (addlevel or 0) <= 0 then
 				addlevel = bcd.leveled
 			end
-			if core.add_node_level(bcp, addlevel) == 0 then
+			if core.add_node_level(bcp, addlevel) < addlevel then
+				return true
+			elseif bcd.buildable_to then
+				-- Node level has already reached max, don't place anything
 				return true
 			end
 		end
@@ -301,7 +342,7 @@ core.register_entity(":__builtin:falling_node", {
 					z = vel.z
 				})
 				self.object:set_pos(vector.add(self.object:get_pos(),
-					{x = 0, y = -0.2, z = 0}))
+					{x = 0, y = -0.5, z = 0}))
 			end
 			return
 		elseif bcn.name == "ignore" then
@@ -351,6 +392,7 @@ local function convert_to_falling_node(pos, node)
 	if not obj then
 		return false
 	end
+	-- remember node level, the entities' set_node() uses this
 	node.level = core.get_node_level(pos)
 	local meta = core.get_meta(pos)
 	local metatable = meta and meta:to_table() or {}
@@ -362,7 +404,7 @@ local function convert_to_falling_node(pos, node)
 
 	obj:get_luaentity():set_node(node, metatable)
 	core.remove_node(pos)
-	return true
+	return true, obj
 end
 
 function core.spawn_falling_node(pos)
@@ -436,18 +478,23 @@ function core.check_single_for_falling(p)
 		-- Only spawn falling node if node below is loaded
 		local n_bottom = core.get_node_or_nil(p_bottom)
 		local d_bottom = n_bottom and core.registered_nodes[n_bottom.name]
-		if d_bottom and
-
-				(core.get_item_group(n.name, "float") == 0 or
-				d_bottom.liquidtype == "none") and
-
-				(n.name ~= n_bottom.name or (d_bottom.leveled and
-				core.get_node_level(p_bottom) <
-				core.get_node_max_level(p_bottom))) and
-
-				(not d_bottom.walkable or d_bottom.buildable_to) then
-			convert_to_falling_node(p, n)
-			return true
+		if d_bottom then
+			local same = n.name == n_bottom.name
+			-- Let leveled nodes fall if it can merge with the bottom node
+			if same and d_bottom.paramtype2 == "leveled" and
+					core.get_node_level(p_bottom) <
+					core.get_node_max_level(p_bottom) then
+				convert_to_falling_node(p, n)
+				return true
+			end
+			-- Otherwise only if the bottom node is considered "fall through"
+			if not same and
+					(not d_bottom.walkable or d_bottom.buildable_to) and
+					(core.get_item_group(n.name, "float") == 0 or
+					d_bottom.liquidtype == "none") then
+				convert_to_falling_node(p, n)
+				return true
+			end
 		end
 	end
 

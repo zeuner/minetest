@@ -20,6 +20,8 @@ local function basic_dump(o)
 	-- dump's output is intended for humans.
 	--elseif tp == "function" then
 	--	return string.format("loadstring(%q)", string.dump(o))
+	elseif tp == "userdata" then
+		return tostring(o)
 	else
 		return string.format("<%s>", tp)
 	end
@@ -242,6 +244,15 @@ function math.factorial(x)
 	return v
 end
 
+
+function math.round(x)
+	if x >= 0 then
+		return math.floor(x + 0.5)
+	end
+	return math.ceil(x - 0.5)
+end
+
+
 function core.formspec_escape(text)
 	if text ~= nil then
 		text = string.gsub(text,"\\","\\\\")
@@ -345,18 +356,12 @@ if INIT == "game" then
 --Wrapper for rotate_and_place() to check for sneak and assume Creative mode
 --implies infinite stacks when performing a 6d rotation.
 --------------------------------------------------------------------------------
-	local creative_mode_cache = core.settings:get_bool("creative_mode")
-	local function is_creative(name)
-		return creative_mode_cache or
-				core.check_player_privs(name, {creative = true})
-	end
-
 	core.rotate_node = function(itemstack, placer, pointed_thing)
 		local name = placer and placer:get_player_name() or ""
 		local invert_wall = placer and placer:get_player_control().sneak or false
 		return core.rotate_and_place(itemstack, placer, pointed_thing,
-				is_creative(name),
-				{invert_wall = invert_wall}, true)
+			core.is_creative_enabled(name),
+			{invert_wall = invert_wall}, true)
 	end
 end
 
@@ -700,4 +705,8 @@ function core.privs_to_string(privs, delim)
 		end
 	end
 	return table.concat(list, delim)
+end
+
+function core.is_nan(number)
+	return number ~= number
 end

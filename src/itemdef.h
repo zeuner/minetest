@@ -56,6 +56,7 @@ struct ItemDefinition
 	ItemType type;
 	std::string name; // "" = hand
 	std::string description; // Shown in tooltip.
+	std::string short_description;
 
 	/*
 		Visual properties
@@ -85,6 +86,7 @@ struct ItemDefinition
 	// Server will update the precise end result a moment later.
 	// "" = no prediction
 	std::string node_placement_prediction;
+	u8 place_param2;
 
 	/*
 		Some helpful methods

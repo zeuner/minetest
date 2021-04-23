@@ -57,25 +57,35 @@ std::string ServerActiveObject::generateUpdateInfantCommand(u16 infant_id, u16 p
 	// parameters
 	writeU16(os, infant_id);
 	writeU8(os, getSendType());
-	os << serializeLongString(getClientInitializationData(protocol_version));
-	return os.str();
-}
-
-std::string ServerActiveObject::generateUpdateNametagAttributesCommand(const video::SColor &color) const
-{
-	std::ostringstream os(std::ios::binary);
-	// command
-	writeU8(os, AO_CMD_UPDATE_NAMETAG_ATTRIBUTES);
-	// parameters
-	writeU8(os, 1); // version for forward compatibility
-	writeARGB8(os, color);
+	if (protocol_version < 38) {
+		// Clients since 4aa9a66 so no longer need this data
+		// Version 38 is the first bump after that commit.
+		// See also: ClientEnvironment::addActiveObject
+		os << serializeString32(getClientInitializationData(protocol_version));
+	}
 	return os.str();
 }
 
 void ServerActiveObject::dumpAOMessagesToQueue(std::queue<ActiveObjectMessage> &queue)
 {
 	while (!m_messages_out.empty()) {
-		queue.push(m_messages_out.front());
+		queue.push(std::move(m_messages_out.front()));
 		m_messages_out.pop();
+	}
+}
+
+void ServerActiveObject::markForRemoval()
+{
+	if (!m_pending_removal) {
+		onMarkedForRemoval();
+		m_pending_removal = true;
+	}
+}
+
+void ServerActiveObject::markForDeactivation()
+{
+	if (!m_pending_deactivation) {
+		onMarkedForDeactivation();
+		m_pending_deactivation = true;
 	}
 }

@@ -18,8 +18,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#ifndef CLIENT_HUD_HEADER
-#define CLIENT_HUD_HEADER
+#pragma once
 
 #include <vector>
 #include <IGUIFont.h>
@@ -46,15 +45,22 @@ public:
 
 	video::SColor crosshair_argb;
 	video::SColor selectionbox_argb;
+
 	bool use_crosshair_image = false;
+	bool use_object_crosshair_image = false;
 	std::string hotbar_image = "";
 	bool use_hotbar_image = false;
 	std::string hotbar_selected_image = "";
 	bool use_hotbar_selected_image = false;
 
+	bool pointing_at_object = false;
+
 	Hud(gui::IGUIEnvironment *guienv, Client *client, LocalPlayer *player,
 			Inventory *inventory);
 	~Hud();
+
+	void toggleBlockBounds();
+	void drawBlockBounds();
 
 	void drawHotbar(u16 playeritem);
 	void resizeHotbar();
@@ -78,6 +84,8 @@ public:
 		m_selected_face_normal = face_normal;
 	}
 
+	bool hasElementOfType(HudElementType type);
+
 	void drawLuaElements(const v3s16 &camera_offset);
 
 private:
@@ -92,7 +100,14 @@ private:
 
 	void drawItem(const ItemStack &item, const core::rect<s32> &rect, bool selected);
 
+	void drawCompassTranslate(HudElement *e, video::ITexture *texture,
+			const core::rect<s32> &rect, int way);
+
+	void drawCompassRotate(HudElement *e, video::ITexture *texture,
+			const core::rect<s32> &rect, int way);
+
 	float m_hud_scaling; // cached minetest setting
+	float m_scale_factor;
 	v3s16 m_camera_offset;
 	v2u32 m_screensize;
 	v2s32 m_displaycenter;
@@ -110,6 +125,16 @@ private:
 	v3f m_selected_face_normal;
 
 	video::SMaterial m_selection_material;
+
+	scene::SMeshBuffer m_rotation_mesh_buffer;
+
+	enum BlockBoundsMode
+	{
+		BLOCK_BOUNDS_OFF,
+		BLOCK_BOUNDS_CURRENT,
+		BLOCK_BOUNDS_ALL,
+		BLOCK_BOUNDS_MAX
+	} m_block_bounds_mode = BLOCK_BOUNDS_OFF;
 
 	enum
 	{
@@ -147,4 +172,3 @@ void drawItemStack(
 		const v3s16 &angle,
 		const v3s16 &rotation_speed);
 
-#endif

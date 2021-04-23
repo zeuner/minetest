@@ -64,6 +64,14 @@ extern gui::IGUIEnvironment* guienv;
 	Utility classes
 */
 
+u32 PacketCounter::sum() const
+{
+	u32 n = 0;
+	for (const auto &it : m_packets)
+		n += it.second;
+	return n;
+}
+
 void PacketCounter::print(std::ostream &o) const
 {
 	for (const auto &it : m_packets) {
@@ -121,6 +129,7 @@ Client::Client(
 	if (g_settings->getBool("enable_minimap")) {
 		m_minimap = new Minimap(this);
 	}
+
 	m_cache_save_interval = g_settings->getU16("server_map_save_interval");
 }
 
@@ -149,20 +158,6 @@ void Client::loadMods()
 	// Load builtin
 	scanModIntoMemory(BUILTIN_MOD_NAME, getBuiltinLuaPath());
 	m_script->loadModFromMemory(BUILTIN_MOD_NAME);
-
-	// TODO Uncomment when server-sent CSM and verifying of builtin are complete
-	/*
-	// Don't load client-provided mods if disabled by server
-	if (checkCSMRestrictionFlag(CSMRestrictionFlags::CSM_RF_LOAD_CLIENT_MODS)) {
-		warningstream << "Client-provided mod loading is disabled by server." <<
-			std::endl;
-		// If builtin integrity is wrong, disconnect user
-		if (!checkBuiltinIntegrity()) {
-			// TODO disconnect user
-		}
-		return;
-	}
-	*/
 
 	ClientModConfiguration modconf(getClientModsLuaPath());
 	m_mods = modconf.getMods();
@@ -207,12 +202,6 @@ void Client::loadMods()
 		m_script->on_minimap_ready(m_minimap);
 }
 
-bool Client::checkBuiltinIntegrity()
-{
-	// TODO
-	return true;
-}
-
 void Client::scanModSubfolder(const std::string &mod_name, const std::string &mod_path,
 			std::string mod_subpath)
 {
@@ -230,18 +219,13 @@ void Client::scanModSubfolder(const std::string &mod_name, const std::string &mo
 		infostream << "Client::scanModSubfolder(): Loading \"" << real_path
 				<< "\" as \"" << vfs_path << "\"." << std::endl;
 
-		std::ifstream is(real_path, std::ios::binary | std::ios::ate);
-		if(!is.good()) {
+		std::string contents;
+		if (!fs::ReadFile(real_path, contents)) {
 			errorstream << "Client::scanModSubfolder(): Can't read file \""
 					<< real_path << "\"." << std::endl;
 			continue;
 		}
-		auto size = is.tellg();
-		std::string contents(size, '\0');
-		is.seekg(0);
-		is.read(&contents[0], size);
 
-		infostream << "  size: " << size << " bytes" << std::endl;
 		m_mod_vfs.emplace(vfs_path, contents);
 	}
 }
@@ -322,6 +306,8 @@ Client::~Client()
 	}
 
 	delete m_minimap;
+	m_minimap = nullptr;
+
 	delete m_media_downloader;
 }
 
@@ -357,9 +343,11 @@ void Client::step(float dtime)
 		if(counter <= 0.0f)
 		{
 			counter = 30.0f;
+			u32 sum = m_packetcounter.sum();
+			float avg = sum / counter;
 
-			infostream << "Client packetcounter (" << m_packetcounter_timer
-					<< "s):"<<std::endl;
+			infostream << "Client packetcounter (" << counter << "s): "
+					<< "sum=" << sum << " avg=" << avg << "/s" << std::endl;
 			m_packetcounter.print(infostream);
 			m_packetcounter.clear();
 		}
@@ -449,12 +437,9 @@ void Client::step(float dtime)
 	/*
 		Handle environment
 	*/
-	// Control local player (0ms)
 	LocalPlayer *player = m_env.getLocalPlayer();
-	assert(player);
-	player->applyControl(dtime, &m_env);
 
-	// Step environment
+	// Step environment (also handles player controls)
 	m_env.step(dtime);
 	m_sound->step(dtime);
 
@@ -660,11 +645,9 @@ void Client::step(float dtime)
 	}
 }
 
-bool Client::loadMedia(const std::string &data, const std::string &filename)
+bool Client::loadMedia(const std::string &data, const std::string &filename,
+	bool from_media_push)
 {
-	// Silly irrlicht's const-incorrectness
-	Buffer<char> data_rw(data.c_str(), data.size());
-
 	std::string name;
 
 	const char *image_ext[] = {
@@ -680,9 +663,15 @@ bool Client::loadMedia(const std::string &data, const std::string &filename)
 		io::IFileSystem *irrfs = RenderingEngine::get_filesystem();
 		video::IVideoDriver *vdrv = RenderingEngine::get_video_driver();
 
-		// Create an irrlicht memory file
+#if IRRLICHT_VERSION_MAJOR == 1 && IRRLICHT_VERSION_MINOR > 8
+		io::IReadFile *rfile = irrfs->createMemoryReadFile(
+				data.c_str(), data.size(), "_tempreadfile");
+#else
+		// Silly irrlicht's const-incorrectness
+		Buffer<char> data_rw(data.c_str(), data.size());
 		io::IReadFile *rfile = irrfs->createMemoryReadFile(
 				*data_rw, data_rw.getSize(), "_tempreadfile");
+#endif
 
 		FATAL_ERROR_IF(!rfile, "Could not create irrlicht memory file.");
 
@@ -717,7 +706,6 @@ bool Client::loadMedia(const std::string &data, const std::string &filename)
 		".x", ".b3d", ".md2", ".obj",
 		NULL
 	};
-
 	name = removeStringEnd(filename, model_ext);
 	if (!name.empty()) {
 		verbosestream<<"Client: Storing model into memory: "
@@ -734,6 +722,8 @@ bool Client::loadMedia(const std::string &data, const std::string &filename)
 	};
 	name = removeStringEnd(filename, translate_ext);
 	if (!name.empty()) {
+		if (from_media_push)
+			return false;
 		TRACESTREAM(<< "Client: Loading translation: "
 				<< "\"" << filename << "\"" << std::endl);
 		g_client_translations->loadTranslation(data);
@@ -1209,7 +1199,7 @@ void Client::sendChatMessage(const std::wstring &message)
 	if (canSendChatMessage()) {
 		u32 now = time(NULL);
 		float time_passed = now - m_last_chat_message_sent;
-		m_last_chat_message_sent = time(NULL);
+		m_last_chat_message_sent = now;
 
 		m_chat_message_allowance += time_passed * (CLIENT_CHAT_MESSAGE_LIMIT_PER_10S / 8.0f);
 		if (m_chat_message_allowance > CLIENT_CHAT_MESSAGE_LIMIT_PER_10S)
@@ -1288,9 +1278,8 @@ void Client::sendPlayerPos()
 	// Save bandwidth by only updating position when
 	// player is not dead and something changed
 
-	// FIXME: This part causes breakages in mods like 3d_armor, and has been commented for now
-	// if (m_activeobjects_received && player->isDead())
-	//	return;
+	if (m_activeobjects_received && player->isDead())
+		return;
 
 	if (
 			player->last_position     == player->getPosition() &&
@@ -1298,7 +1287,7 @@ void Client::sendPlayerPos()
 			player->last_pitch        == player->getPitch()    &&
 			player->last_yaw          == player->getYaw()      &&
 			player->last_keyPressed   == player->keyPressed    &&
-			player->last_camera_fov   == camera_fov              &&
+			player->last_camera_fov   == camera_fov            &&
 			player->last_wanted_range == wanted_range)
 		return;
 
@@ -1660,11 +1649,6 @@ ClientEvent *Client::getClientEvent()
 	return event;
 }
 
-bool Client::connectedToServer()
-{
-	return m_con->Connected();
-}
-
 const Address Client::getServerAddress()
 {
 	return m_con->GetPeerAddress(PEER_ID_SERVER);
@@ -1851,7 +1835,7 @@ void Client::makeScreenshot()
 				sstr << "Failed to save screenshot '" << filename << "'";
 			}
 			pushToChatQueue(new ChatMessage(CHATMESSAGE_TYPE_SYSTEM,
-					narrow_to_wide(sstr.str())));
+					utf8_to_wide(sstr.str())));
 			infostream << sstr.str() << std::endl;
 			image->drop();
 		}
@@ -1933,13 +1917,20 @@ scene::IAnimatedMesh* Client::getMesh(const std::string &filename, bool cache)
 
 	// Create the mesh, remove it from cache and return it
 	// This allows unique vertex colors and other properties for each instance
+#if IRRLICHT_VERSION_MAJOR == 1 && IRRLICHT_VERSION_MINOR > 8
+	io::IReadFile *rfile = RenderingEngine::get_filesystem()->createMemoryReadFile(
+			data.c_str(), data.size(), filename.c_str());
+#else
 	Buffer<char> data_rw(data.c_str(), data.size()); // Const-incorrect Irrlicht
-	io::IReadFile *rfile   = RenderingEngine::get_filesystem()->createMemoryReadFile(
+	io::IReadFile *rfile = RenderingEngine::get_filesystem()->createMemoryReadFile(
 			*data_rw, data_rw.getSize(), filename.c_str());
+#endif
 	FATAL_ERROR_IF(!rfile, "Could not create/open RAM file");
 
 	scene::IAnimatedMesh *mesh = RenderingEngine::get_scene_manager()->getMesh(rfile);
 	rfile->drop();
+	if (!mesh)
+		return nullptr;
 	mesh->grab();
 	if (!cache)
 		RenderingEngine::get_mesh_cache()->removeMesh(mesh);

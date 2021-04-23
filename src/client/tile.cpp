@@ -427,9 +427,9 @@ private:
 	std::unordered_map<std::string, Palette> m_palettes;
 
 	// Cached settings needed for making textures from meshes
+	bool m_setting_mipmap;
 	bool m_setting_trilinear_filter;
 	bool m_setting_bilinear_filter;
-	bool m_setting_anisotropic_filter;
 };
 
 IWritableTextureSource *createTextureSource()
@@ -448,9 +448,9 @@ TextureSource::TextureSource()
 	// Cache some settings
 	// Note: Since this is only done once, the game must be restarted
 	// for these settings to take effect
+	m_setting_mipmap = g_settings->getBool("mip_map");
 	m_setting_trilinear_filter = g_settings->getBool("trilinear_filter");
 	m_setting_bilinear_filter = g_settings->getBool("bilinear_filter");
-	m_setting_anisotropic_filter = g_settings->getBool("anisotropic_filter");
 }
 
 TextureSource::~TextureSource()
@@ -668,7 +668,14 @@ video::ITexture* TextureSource::getTexture(const std::string &name, u32 *id)
 
 video::ITexture* TextureSource::getTextureForMesh(const std::string &name, u32 *id)
 {
-	return getTexture(name + "^[applyfiltersformesh", id);
+	static thread_local bool filter_needed =
+		g_settings->getBool("texture_clean_transparent") || m_setting_mipmap ||
+		((m_setting_trilinear_filter || m_setting_bilinear_filter) &&
+		g_settings->getS32("texture_min_size") > 1);
+	// Avoid duplicating texture if it won't actually change
+	if (filter_needed)
+		return getTexture(name + "^[applyfiltersformesh", id);
+	return getTexture(name, id);
 }
 
 Palette* TextureSource::getPalette(const std::string &name)
@@ -832,17 +839,16 @@ static video::IImage *createInventoryCubeImage(
 			image = scaled;
 		}
 		sanity_check(image->getPitch() == 4 * size);
-		return reinterpret_cast<u32 *>(image->lock());
+		return reinterpret_cast<u32 *>(image->getData());
 	};
 	auto free_image = [] (video::IImage *image) -> void {
-		image->unlock();
 		image->drop();
 	};
 
 	video::IImage *result = driver->createImage(video::ECF_A8R8G8B8, {cube_size, cube_size});
 	sanity_check(result->getPitch() == 4 * cube_size);
 	result->fill(video::SColor(0x00000000u));
-	u32 *target = reinterpret_cast<u32 *>(result->lock());
+	u32 *target = reinterpret_cast<u32 *>(result->getData());
 
 	// Draws single cube face
 	// `shade_factor` is face brightness, in range [0.0, 1.0]
@@ -901,7 +907,6 @@ static video::IImage *createInventoryCubeImage(
 				{0, 5}, {1, 5},
 			});
 
-	result->unlock();
 	return result;
 }
 
@@ -1623,8 +1628,18 @@ bool TextureSource::generateImagePart(std::string part_of_name,
 		*/
 		else if (str_starts_with(part_of_name, "[applyfiltersformesh"))
 		{
-			// Apply the "clean transparent" filter, if configured.
-			if (g_settings->getBool("texture_clean_transparent"))
+			/* IMPORTANT: When changing this, getTextureForMesh() needs to be
+			 * updated too. */
+
+			if (!baseimg) {
+				errorstream << "generateImagePart(): baseimg == NULL "
+						<< "for part_of_name=\"" << part_of_name
+						<< "\", cancelling." << std::endl;
+				return false;
+			}
+
+			// Apply the "clean transparent" filter, if needed
+			if (m_setting_mipmap || g_settings->getBool("texture_clean_transparent"))
 				imageCleanTransparent(baseimg, 127);
 
 			/* Upscale textures to user's requested minimum size.  This is a trick to make
@@ -2209,9 +2224,14 @@ video::SColor TextureSource::getTextureAverageColor(const std::string &name)
 	video::IVideoDriver *driver = RenderingEngine::get_video_driver();
 	video::SColor c(0, 0, 0, 0);
 	video::ITexture *texture = getTexture(name);
+	if (!texture)
+		return c;
 	video::IImage *image = driver->createImage(texture,
 		core::position2d<s32>(0, 0),
 		texture->getOriginalSize());
+	if (!image)
+		return c;
+
 	u32 total = 0;
 	u32 tR = 0;
 	u32 tG = 0;

@@ -76,6 +76,7 @@ void RenderingCore::draw3D()
 	driver->setTransform(video::ETS_WORLD, core::IdentityMatrix);
 	if (!show_hud)
 		return;
+	hud->drawBlockBounds();
 	hud->drawSelectionMesh();
 	if (draw_wield_tool)
 		camera->drawWieldedTool();
@@ -86,6 +87,7 @@ void RenderingCore::drawHUD()
 	if (show_hud) {
 		if (draw_crosshair)
 			hud->drawCrosshair();
+	
 		hud->drawHotbar(client->getEnv().getLocalPlayer()->getWieldIndex());
 		hud->drawLuaElements(camera->getOffset());
 		camera->drawNametags();

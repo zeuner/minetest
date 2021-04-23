@@ -148,10 +148,6 @@ treegen::error spawn_ltree(ServerMap *map, v3s16 p0,
 treegen::error make_ltree(MMVManip &vmanip, v3s16 p0,
 	const NodeDefManager *ndef, TreeDef tree_definition)
 {
-	MapNode dirtnode(ndef->getId("mapgen_dirt"));
-	if (dirtnode == CONTENT_IGNORE)
-		errorstream << "Treegen (make_ltree): Mapgen alias 'mapgen_dirt' is invalid!" << std::endl;
-
 	s32 seed;
 	if (tree_definition.explicit_seed)
 		seed = tree_definition.seed + 14002;
@@ -229,43 +225,43 @@ treegen::error make_ltree(MMVManip &vmanip, v3s16 p0,
 		axiom = temp;
 	}
 
-	//make sure tree is not floating in the air
+	// Add trunk nodes below a wide trunk to avoid gaps when tree is on sloping ground
 	if (tree_definition.trunk_type == "double") {
-		tree_node_placement(
+		tree_trunk_placement(
 			vmanip,
 			v3f(position.X + 1, position.Y - 1, position.Z),
-			dirtnode
+			tree_definition
 		);
-		tree_node_placement(
+		tree_trunk_placement(
 			vmanip,
 			v3f(position.X, position.Y - 1, position.Z + 1),
-			dirtnode
+			tree_definition
 		);
-		tree_node_placement(
+		tree_trunk_placement(
 			vmanip,
 			v3f(position.X + 1, position.Y - 1, position.Z + 1),
-			dirtnode
+			tree_definition
 		);
 	} else if (tree_definition.trunk_type == "crossed") {
-		tree_node_placement(
+		tree_trunk_placement(
 			vmanip,
 			v3f(position.X + 1, position.Y - 1, position.Z),
-			dirtnode
+			tree_definition
 		);
-		tree_node_placement(
+		tree_trunk_placement(
 			vmanip,
 			v3f(position.X - 1, position.Y - 1, position.Z),
-			dirtnode
+			tree_definition
 		);
-		tree_node_placement(
+		tree_trunk_placement(
 			vmanip,
 			v3f(position.X, position.Y - 1, position.Z + 1),
-			dirtnode
+			tree_definition
 		);
-		tree_node_placement(
+		tree_trunk_placement(
 			vmanip,
 			v3f(position.X, position.Y - 1, position.Z - 1),
-			dirtnode
+			tree_definition
 		);
 	}
 
@@ -372,7 +368,7 @@ treegen::error make_ltree(MMVManip &vmanip, v3s16 p0,
 					!tree_definition.thin_branches)) {
 				tree_trunk_placement(
 					vmanip,
-					v3f(position.X +1 , position.Y, position.Z),
+					v3f(position.X + 1, position.Y, position.Z),
 					tree_definition
 				);
 				tree_trunk_placement(
@@ -410,7 +406,8 @@ treegen::error make_ltree(MMVManip &vmanip, v3s16 p0,
 					v3f(position.X, position.Y, position.Z - 1),
 					tree_definition
 				);
-			} if (!stack_orientation.empty()) {
+			}
+			if (!stack_orientation.empty()) {
 				s16 size = 1;
 				for (x = -size; x <= size; x++)
 				for (y = -size; y <= size; y++)
@@ -528,19 +525,6 @@ treegen::error make_ltree(MMVManip &vmanip, v3s16 p0,
 	}
 
 	return SUCCESS;
-}
-
-
-void tree_node_placement(MMVManip &vmanip, v3f p0, MapNode node)
-{
-	v3s16 p1 = v3s16(myround(p0.X), myround(p0.Y), myround(p0.Z));
-	if (!vmanip.m_area.contains(p1))
-		return;
-	u32 vi = vmanip.m_area.index(p1);
-	if (vmanip.m_data[vi].getContent() != CONTENT_AIR
-			&& vmanip.m_data[vi].getContent() != CONTENT_IGNORE)
-		return;
-	vmanip.m_data[vmanip.m_area.index(p1)] = node;
 }
 
 
