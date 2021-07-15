@@ -17,11 +17,12 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#ifndef S_ENV_H_
-#define S_ENV_H_
+#pragma once
 
 #include "cpp_api/s_base.h"
 #include "irr_v3d.h"
+#include "mapnode.h"
+#include <vector>
 
 class ServerEnvironment;
 struct ScriptCallbackState;
@@ -42,7 +43,8 @@ public:
 	void on_emerge_area_completion(v3s16 blockpos, int action,
 		ScriptCallbackState *state);
 
+	// Called after liquid transform changes
+	void on_liquid_transformed(const std::vector<std::pair<v3s16, MapNode>> &list);
+
 	void initializeEnvironment(ServerEnvironment *env);
 };
-
-#endif /* S_ENV_H_ */

@@ -17,23 +17,21 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#ifndef GAMEDEF_HEADER
-#define GAMEDEF_HEADER
+#pragma once
 
 #include <string>
 #include <vector>
 #include "irrlichttypes.h"
 
 class IItemDefManager;
-class INodeDefManager;
+class NodeDefManager;
 class ICraftDefManager;
 class ITextureSource;
-class ISoundManager;
 class IShaderSource;
-class MtEventManager;
 class IRollbackManager;
 class EmergeManager;
 class Camera;
+class ModChannel;
 class ModMetadata;
 
 namespace irr { namespace scene {
@@ -53,13 +51,11 @@ public:
 	// These are thread-safe IF they are not edited while running threads.
 	// Thus, first they are set up and then they are only read.
 	virtual IItemDefManager* getItemDefManager()=0;
-	virtual INodeDefManager* getNodeDefManager()=0;
+	virtual const NodeDefManager* getNodeDefManager()=0;
 	virtual ICraftDefManager* getCraftDefManager()=0;
 
 	// Used for keeping track of names/ids of unknown nodes
 	virtual u16 allocateUnknownNodeId(const std::string &name)=0;
-
-	virtual MtEventManager* getEventManager()=0;
 
 	// Only usable on the server, and NOT thread-safe. It is usable from the
 	// environment thread.
@@ -67,10 +63,8 @@ public:
 
 	// Shorthands
 	IItemDefManager  *idef()     { return getItemDefManager(); }
-	INodeDefManager  *ndef()     { return getNodeDefManager(); }
+	const NodeDefManager  *ndef() { return getNodeDefManager(); }
 	ICraftDefManager *cdef()     { return getCraftDefManager(); }
-
-	MtEventManager   *event()    { return getEventManager(); }
 	IRollbackManager *rollback() { return getRollbackManager(); }
 
 	virtual const std::vector<ModSpec> &getMods() const = 0;
@@ -79,7 +73,10 @@ public:
 	virtual std::string getModStoragePath() const = 0;
 	virtual bool registerModStorage(ModMetadata *storage) = 0;
 	virtual void unregisterModStorage(const std::string &name) = 0;
+
+	virtual bool joinModChannel(const std::string &channel) = 0;
+	virtual bool leaveModChannel(const std::string &channel) = 0;
+	virtual bool sendModChannelMessage(const std::string &channel,
+		const std::string &message) = 0;
+	virtual ModChannel *getModChannel(const std::string &channel) = 0;
 };
-
-#endif
-

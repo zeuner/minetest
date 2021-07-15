@@ -17,25 +17,27 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#ifndef THREADING_SEMAPHORE_H
-#define THREADING_SEMAPHORE_H
+#pragma once
 
 #if defined(_WIN32)
-	#include <windows.h>
+#include <windows.h>
 #elif defined(__MACH__) && defined(__APPLE__)
-	#include <mach/semaphore.h>
+#include <mach/semaphore.h>
 #else
-	#include <semaphore.h>
+#include <semaphore.h>
 #endif
 
 #include "util/basic_macros.h"
 
-class Semaphore {
+class Semaphore
+{
 public:
-	Semaphore(int val=0);
+	Semaphore(int val = 0);
 	~Semaphore();
 
-	void post(unsigned int num=1);
+	DISABLE_CLASS_COPY(Semaphore);
+
+	void post(unsigned int num = 1);
 	void wait();
 	bool wait(unsigned int time_ms);
 
@@ -47,9 +49,4 @@ private:
 #else
 	sem_t semaphore;
 #endif
-
-	DISABLE_CLASS_COPY(Semaphore);
 };
-
-#endif
-

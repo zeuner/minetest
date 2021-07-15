@@ -23,7 +23,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 bool ScriptApiServer::getAuth(const std::string &playername,
 		std::string *dst_password,
-		std::set<std::string> *dst_privs)
+		std::set<std::string> *dst_privs,
+		s64 *dst_last_login)
 {
 	SCRIPTAPI_PRECHECKHEADER
 
@@ -43,8 +44,7 @@ bool ScriptApiServer::getAuth(const std::string &playername,
 	luaL_checktype(L, -1, LUA_TTABLE);
 
 	std::string password;
-	bool found = getstringfield(L, -1, "password", password);
-	if (!found)
+	if (!getstringfield(L, -1, "password", password))
 		throw LuaError("Authentication handler didn't return password");
 	if (dst_password)
 		*dst_password = password;
@@ -54,7 +54,13 @@ bool ScriptApiServer::getAuth(const std::string &playername,
 		throw LuaError("Authentication handler didn't return privilege table");
 	if (dst_privs)
 		readPrivileges(-1, *dst_privs);
-	lua_pop(L, 1);
+	lua_pop(L, 1);  // Remove key from privs table
+
+	s64 last_login;
+	if(!getintfield(L, -1, "last_login", last_login))
+		throw LuaError("Authentication handler didn't return last_login");
+	if (dst_last_login)
+		*dst_last_login = (s64)last_login;
 
 	return true;
 }
@@ -88,7 +94,7 @@ void ScriptApiServer::readPrivileges(int index, std::set<std::string> &result)
 	while (lua_next(L, index) != 0) {
 		// key at index -2 and value at index -1
 		std::string key = luaL_checkstring(L, -2);
-		bool value = lua_toboolean(L, -1);
+		bool value = readParam<bool>(L, -1);
 		if (value)
 			result.insert(key);
 		// removes value, keeps key for next iteration
@@ -143,8 +149,18 @@ bool ScriptApiServer::on_chat_message(const std::string &name,
 	lua_pushstring(L, name.c_str());
 	lua_pushstring(L, message.c_str());
 	runCallbacks(2, RUN_CALLBACKS_MODE_OR_SC);
-	bool ate = lua_toboolean(L, -1);
-	return ate;
+	return readParam<bool>(L, -1);
+}
+
+void ScriptApiServer::on_mods_loaded()
+{
+	SCRIPTAPI_PRECHECKHEADER
+
+	// Get registered shutdown hooks
+	lua_getglobal(L, "core");
+	lua_getfield(L, -1, "registered_on_mods_loaded");
+	// Call callbacks
+	runCallbacks(0, RUN_CALLBACKS_MODE_FIRST);
 }
 
 void ScriptApiServer::on_shutdown()
@@ -158,3 +174,25 @@ void ScriptApiServer::on_shutdown()
 	runCallbacks(0, RUN_CALLBACKS_MODE_FIRST);
 }
 
+std::string ScriptApiServer::formatChatMessage(const std::string &name,
+	const std::string &message)
+{
+	SCRIPTAPI_PRECHECKHEADER
+
+	// Push function onto stack
+	lua_getglobal(L, "core");
+	lua_getfield(L, -1, "format_chat_message");
+
+	// Push arguments onto stack
+	lua_pushstring(L, name.c_str());
+	lua_pushstring(L, message.c_str());
+
+	// Actually call the function
+	lua_call(L, 2, 1);
+
+	// Fetch return value
+	std::string ret = lua_tostring(L, -1);
+	lua_pop(L, 1);
+
+	return ret;
+}

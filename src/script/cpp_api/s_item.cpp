@@ -69,7 +69,12 @@ bool ScriptApiItem::item_OnPlace(ItemStack &item,
 
 	// Call function
 	LuaItemStack::create(L, item);
-	objectrefGetOrCreate(L, placer);
+
+	if (!placer)
+		lua_pushnil(L);
+	else
+		objectrefGetOrCreate(L, placer);
+
 	pushPointedThing(pointed);
 	PCALL_RES(lua_pcall(L, 3, 1, error_handler));
 	if (!lua_isnil(L, -1)) {
@@ -110,19 +115,18 @@ bool ScriptApiItem::item_OnUse(ItemStack &item,
 	return true;
 }
 
-bool ScriptApiItem::item_OnSecondaryUse(ItemStack &item, ServerActiveObject *user)
+bool ScriptApiItem::item_OnSecondaryUse(ItemStack &item,
+		ServerActiveObject *user, const PointedThing &pointed)
 {
 	SCRIPTAPI_PRECHECKHEADER
-	
+
 	int error_handler = PUSH_ERROR_HANDLER(L);
-	
+
 	if (!getItemCallback(item.name.c_str(), "on_secondary_use"))
 		return false;
-	
+
 	LuaItemStack::create(L, item);
 	objectrefGetOrCreate(L, user);
-	PointedThing pointed;
-	pointed.type = POINTEDTHING_NOTHING;
 	pushPointedThing(pointed);
 	PCALL_RES(lua_pcall(L, 3, 1, error_handler));
 	if (!lua_isnil(L, -1)) {
@@ -172,7 +176,7 @@ bool ScriptApiItem::item_CraftPredict(ItemStack &item, ServerActiveObject *user,
 		const InventoryList *old_craft_grid, const InventoryLocation &craft_inv)
 {
 	SCRIPTAPI_PRECHECKHEADER
-
+	sanity_check(old_craft_grid);
 	int error_handler = PUSH_ERROR_HANDLER(L);
 
 	lua_getglobal(L, "core");
@@ -206,7 +210,8 @@ bool ScriptApiItem::item_CraftPredict(ItemStack &item, ServerActiveObject *user,
 // function onto the stack
 // If core.registered_items[name] doesn't exist, core.nodedef_default
 // is tried instead so unknown items can still be manipulated to some degree
-bool ScriptApiItem::getItemCallback(const char *name, const char *callbackname)
+bool ScriptApiItem::getItemCallback(const char *name, const char *callbackname,
+		const v3s16 *p)
 {
 	lua_State* L = getStack();
 
@@ -217,10 +222,12 @@ bool ScriptApiItem::getItemCallback(const char *name, const char *callbackname)
 	lua_getfield(L, -1, name);
 	lua_remove(L, -2); // Remove registered_items
 	// Should be a table
-	if(lua_type(L, -1) != LUA_TTABLE)
-	{
+	if (lua_type(L, -1) != LUA_TTABLE) {
 		// Report error and clean up
-		errorstream << "Item \"" << name << "\" not defined" << std::endl;
+		errorstream << "Item \"" << name << "\" not defined";
+		if (p)
+			errorstream << " at position " << PP(*p);
+		errorstream << std::endl;
 		lua_pop(L, 1);
 
 		// Try core.nodedef_default instead
@@ -237,7 +244,9 @@ bool ScriptApiItem::getItemCallback(const char *name, const char *callbackname)
 	// Should be a function or nil
 	if (lua_type(L, -1) == LUA_TFUNCTION) {
 		return true;
-	} else if (!lua_isnil(L, -1)) {
+	}
+
+	if (!lua_isnil(L, -1)) {
 		errorstream << "Item \"" << name << "\" callback \""
 			<< callbackname << "\" is not a function" << std::endl;
 	}
@@ -245,31 +254,10 @@ bool ScriptApiItem::getItemCallback(const char *name, const char *callbackname)
 	return false;
 }
 
-void ScriptApiItem::pushPointedThing(const PointedThing& pointed)
+void ScriptApiItem::pushPointedThing(const PointedThing &pointed, bool hitpoint)
 {
 	lua_State* L = getStack();
 
-	lua_newtable(L);
-	if(pointed.type == POINTEDTHING_NODE)
-	{
-		lua_pushstring(L, "node");
-		lua_setfield(L, -2, "type");
-		push_v3s16(L, pointed.node_undersurface);
-		lua_setfield(L, -2, "under");
-		push_v3s16(L, pointed.node_abovesurface);
-		lua_setfield(L, -2, "above");
-	}
-	else if(pointed.type == POINTEDTHING_OBJECT)
-	{
-		lua_pushstring(L, "object");
-		lua_setfield(L, -2, "type");
-		objectrefGet(L, pointed.object_id);
-		lua_setfield(L, -2, "ref");
-	}
-	else
-	{
-		lua_pushstring(L, "nothing");
-		lua_setfield(L, -2, "type");
-	}
+	push_pointed_thing(L, pointed, false, hitpoint);
 }
 

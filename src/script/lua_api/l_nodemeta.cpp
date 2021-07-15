@@ -23,6 +23,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "common/c_content.h"
 #include "serverenvironment.h"
 #include "map.h"
+#include "mapblock.h"
 #include "server.h"
 
 /*
@@ -38,6 +39,9 @@ NodeMetaRef* NodeMetaRef::checkobject(lua_State *L, int narg)
 
 Metadata* NodeMetaRef::getmeta(bool auto_create)
 {
+	if (m_is_local)
+		return m_meta;
+
 	NodeMetadata *meta = m_env->getMap().getNodeMetadata(m_p);
 	if (meta == NULL && auto_create) {
 		meta = new NodeMetadata(m_env->getGameDef()->idef());
@@ -51,24 +55,22 @@ Metadata* NodeMetaRef::getmeta(bool auto_create)
 
 void NodeMetaRef::clearMeta()
 {
+	SANITY_CHECK(!m_is_local);
 	m_env->getMap().removeNodeMetadata(m_p);
 }
 
-void NodeMetaRef::reportMetadataChange()
+void NodeMetaRef::reportMetadataChange(const std::string *name)
 {
+	SANITY_CHECK(!m_is_local);
 	// NOTE: This same code is in rollback_interface.cpp
 	// Inform other things that the metadata has changed
-	v3s16 blockpos = getNodeBlockPos(m_p);
+	NodeMetadata *meta = dynamic_cast<NodeMetadata*>(m_meta);
+
 	MapEditEvent event;
 	event.type = MEET_BLOCK_NODE_METADATA_CHANGED;
-	event.p = blockpos;
-	m_env->getMap().dispatchEvent(&event);
-	// Set the block to be saved
-	MapBlock *block = m_env->getMap().getBlockNoCreateNoEx(blockpos);
-	if (block) {
-		block->raiseModified(MOD_STATE_WRITE_NEEDED,
-			MOD_REASON_REPORT_META_CHANGE);
-	}
+	event.p = m_p;
+	event.is_private_change = name && meta && meta->isPrivate(*name);
+	m_env->getMap().dispatchEvent(event);
 }
 
 // Exported functions
@@ -91,6 +93,32 @@ int NodeMetaRef::l_get_inventory(lua_State *L)
 	return 1;
 }
 
+// mark_as_private(self, <string> or {<string>, <string>, ...})
+int NodeMetaRef::l_mark_as_private(lua_State *L)
+{
+	MAP_LOCK_REQUIRED;
+
+	NodeMetaRef *ref = checkobject(L, 1);
+	NodeMetadata *meta = dynamic_cast<NodeMetadata*>(ref->getmeta(true));
+	assert(meta);
+
+	if (lua_istable(L, 2)) {
+		lua_pushnil(L);
+		while (lua_next(L, 2) != 0) {
+			// key at index -2 and value at index -1
+			luaL_checktype(L, -1, LUA_TSTRING);
+			meta->markPrivate(readParam<std::string>(L, -1), true);
+			// removes value, keeps key for next iteration
+			lua_pop(L, 1);
+		}
+	} else if (lua_isstring(L, 2)) {
+		meta->markPrivate(readParam<std::string>(L, 2), true);
+	}
+	ref->reportMetadataChange();
+
+	return 0;
+}
+
 void NodeMetaRef::handleToTable(lua_State *L, Metadata *_meta)
 {
 	// fields
@@ -104,7 +132,7 @@ void NodeMetaRef::handleToTable(lua_State *L, Metadata *_meta)
 	if (inv) {
 		std::vector<const InventoryList *> lists = inv->getLists();
 		for(std::vector<const InventoryList *>::const_iterator
-				i = lists.begin(); i != lists.end(); i++) {
+				i = lists.begin(); i != lists.end(); ++i) {
 			push_inventory_list(L, inv, (*i)->getName().c_str());
 			lua_setfield(L, -2, (*i)->getName().c_str());
 		}
@@ -129,7 +157,7 @@ bool NodeMetaRef::handleFromTable(lua_State *L, int table, Metadata *_meta)
 		lua_pushnil(L);
 		while (lua_next(L, inventorytable) != 0) {
 			// key at index -2 and value at index -1
-			std::string name = lua_tostring(L, -2);
+			std::string name = luaL_checkstring(L, -2);
 			read_inventory_list(L, -1, inv, name.c_str(), getServer(L));
 			lua_pop(L, 1); // Remove value, keep key for next iteration
 		}
@@ -146,7 +174,9 @@ NodeMetaRef::NodeMetaRef(v3s16 p, ServerEnvironment *env):
 {
 }
 
-NodeMetaRef::~NodeMetaRef()
+NodeMetaRef::NodeMetaRef(Metadata *meta):
+	m_meta(meta),
+	m_is_local(true)
 {
 }
 
@@ -161,7 +191,17 @@ void NodeMetaRef::create(lua_State *L, v3s16 p, ServerEnvironment *env)
 	lua_setmetatable(L, -2);
 }
 
-void NodeMetaRef::Register(lua_State *L)
+// Client-sided version of the above
+void NodeMetaRef::createClient(lua_State *L, Metadata *meta)
+{
+	NodeMetaRef *o = new NodeMetaRef(meta);
+	*(void **)(lua_newuserdata(L, sizeof(void *))) = o;
+	luaL_getmetatable(L, className);
+	lua_setmetatable(L, -2);
+}
+
+const char NodeMetaRef::className[] = "NodeMetaRef";
+void NodeMetaRef::RegisterCommon(lua_State *L)
 {
 	lua_newtable(L);
 	int methodtable = lua_gettop(L);
@@ -184,17 +224,24 @@ void NodeMetaRef::Register(lua_State *L)
 	lua_pushcfunction(L, gc_object);
 	lua_settable(L, metatable);
 
+	lua_pushliteral(L, "__eq");
+	lua_pushcfunction(L, l_equals);
+	lua_settable(L, metatable);
+
 	lua_pop(L, 1);  // drop metatable
-
-	luaL_openlib(L, 0, methods, 0);  // fill methodtable
-	lua_pop(L, 1);  // drop methodtable
-
-	// Cannot be created from Lua
-	//lua_register(L, className, create_object);
 }
 
-const char NodeMetaRef::className[] = "NodeMetaRef";
-const luaL_reg NodeMetaRef::methods[] = {
+void NodeMetaRef::Register(lua_State *L)
+{
+	RegisterCommon(L);
+	luaL_register(L, nullptr, methodsServer);  // fill methodtable
+	lua_pop(L, 1);  // drop methodtable
+}
+
+
+const luaL_Reg NodeMetaRef::methodsServer[] = {
+	luamethod(MetaDataRef, contains),
+	luamethod(MetaDataRef, get),
 	luamethod(MetaDataRef, get_string),
 	luamethod(MetaDataRef, set_string),
 	luamethod(MetaDataRef, get_int),
@@ -204,5 +251,26 @@ const luaL_reg NodeMetaRef::methods[] = {
 	luamethod(MetaDataRef, to_table),
 	luamethod(MetaDataRef, from_table),
 	luamethod(NodeMetaRef, get_inventory),
+	luamethod(NodeMetaRef, mark_as_private),
+	luamethod(MetaDataRef, equals),
+	{0,0}
+};
+
+
+void NodeMetaRef::RegisterClient(lua_State *L)
+{
+	RegisterCommon(L);
+	luaL_register(L, nullptr, methodsClient);  // fill methodtable
+	lua_pop(L, 1);  // drop methodtable
+}
+
+
+const luaL_Reg NodeMetaRef::methodsClient[] = {
+	luamethod(MetaDataRef, contains),
+	luamethod(MetaDataRef, get),
+	luamethod(MetaDataRef, get_string),
+	luamethod(MetaDataRef, get_int),
+	luamethod(MetaDataRef, get_float),
+	luamethod(MetaDataRef, to_table),
 	{0,0}
 };

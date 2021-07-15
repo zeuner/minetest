@@ -17,8 +17,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#ifndef DEFAULTSETTINGS_HEADER
-#define DEFAULTSETTINGS_HEADER
+#pragma once
 
 class Settings;
 
@@ -26,14 +25,4 @@ class Settings;
  * initialize basic default settings
  * @param settings pointer to settings
  */
-void set_default_settings(Settings *settings);
-
-/**
- * override a default settings by settings from another settings element
- * @param settings target settings pointer
- * @param from source settings pointer
- */
-void override_default_settings(Settings *settings, Settings *from);
-
-#endif
-
+void set_default_settings();

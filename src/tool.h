@@ -17,29 +17,27 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#ifndef TOOL_HEADER
-#define TOOL_HEADER
+#pragma once
 
 #include "irrlichttypes.h"
 #include <string>
 #include <iostream>
-#include "util/cpp11_container.h"
 #include "itemgroup.h"
+#include <json/json.h>
+
+struct ItemDefinition;
 
 struct ToolGroupCap
 {
-	UNORDERED_MAP<int, float> times;
-	int maxlevel;
-	int uses;
+	std::unordered_map<int, float> times;
+	int maxlevel = 1;
+	int uses = 20;
 
-	ToolGroupCap():
-		maxlevel(1),
-		uses(20)
-	{}
+	ToolGroupCap() = default;
 
 	bool getTime(int rating, float *time) const
 	{
-		UNORDERED_MAP<int, float>::const_iterator i = times.find(rating);
+		std::unordered_map<int, float>::const_iterator i = times.find(rating);
 		if (i == times.end()) {
 			*time = 0;
 			return false;
@@ -47,11 +45,14 @@ struct ToolGroupCap
 		*time = i->second;
 		return true;
 	}
+
+	void toJson(Json::Value &object) const;
+	void fromJson(const Json::Value &json);
 };
 
 
-typedef UNORDERED_MAP<std::string, struct ToolGroupCap> ToolGCMap;
-typedef UNORDERED_MAP<std::string, s16> DamageGroup;
+typedef std::unordered_map<std::string, struct ToolGroupCap> ToolGCMap;
+typedef std::unordered_map<std::string, s16> DamageGroup;
 
 struct ToolCapabilities
 {
@@ -59,21 +60,26 @@ struct ToolCapabilities
 	int max_drop_level;
 	ToolGCMap groupcaps;
 	DamageGroup damageGroups;
+	int punch_attack_uses;
 
 	ToolCapabilities(
-			float full_punch_interval_=1.4,
-			int max_drop_level_=1,
-			ToolGCMap groupcaps_=ToolGCMap(),
-			DamageGroup damageGroups_=DamageGroup()
+			float full_punch_interval_ = 1.4f,
+			int max_drop_level_ = 1,
+			const ToolGCMap &groupcaps_ = ToolGCMap(),
+			const DamageGroup &damageGroups_ = DamageGroup(),
+			int punch_attack_uses_ = 0
 	):
 		full_punch_interval(full_punch_interval_),
 		max_drop_level(max_drop_level_),
 		groupcaps(groupcaps_),
-		damageGroups(damageGroups_)
+		damageGroups(damageGroups_),
+		punch_attack_uses(punch_attack_uses_)
 	{}
 
 	void serialize(std::ostream &os, u16 version) const;
 	void deSerialize(std::istream &is);
+	void serializeJson(std::ostream &os) const;
+	void deserializeJson(std::istream &is);
 };
 
 struct DigParams
@@ -85,8 +91,8 @@ struct DigParams
 	u16 wear;
 	std::string main_group;
 
-	DigParams(bool a_diggable=false, float a_time=0, u16 a_wear=0,
-			std::string a_main_group=""):
+	DigParams(bool a_diggable = false, float a_time = 0.0f, u16 a_wear = 0,
+			const std::string &a_main_group = ""):
 		diggable(a_diggable),
 		time(a_time),
 		wear(a_wear),
@@ -95,17 +101,14 @@ struct DigParams
 };
 
 DigParams getDigParams(const ItemGroupList &groups,
-		const ToolCapabilities *tp, float time_from_last_punch);
-
-DigParams getDigParams(const ItemGroupList &groups,
 		const ToolCapabilities *tp);
 
 struct HitParams
 {
 	s16 hp;
-	s16 wear;
+	u16 wear;
 
-	HitParams(s16 hp_=0, s16 wear_=0):
+	HitParams(s16 hp_ = 0, u16 wear_ = 0):
 		hp(hp_),
 		wear(wear_)
 	{}
@@ -119,15 +122,11 @@ HitParams getHitParams(const ItemGroupList &armor_groups,
 
 struct PunchDamageResult
 {
-	bool did_punch;
-	int damage;
-	int wear;
+	bool did_punch = false;
+	int damage = 0;
+	int wear = 0;
 
-	PunchDamageResult():
-		did_punch(false),
-		damage(0),
-		wear(0)
-	{}
+	PunchDamageResult() = default;
 };
 
 struct ItemStack;
@@ -139,5 +138,4 @@ PunchDamageResult getPunchDamage(
 		float time_from_last_punch
 );
 
-#endif
-
+f32 getToolRange(const ItemDefinition &def_selected, const ItemDefinition &def_hand);

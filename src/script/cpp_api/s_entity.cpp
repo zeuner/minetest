@@ -23,6 +23,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "object_properties.h"
 #include "common/c_converter.h"
 #include "common/c_content.h"
+#include "server.h"
 
 bool ScriptApiEntity::luaentity_Add(u16 id, const char *name)
 {
@@ -56,7 +57,7 @@ bool ScriptApiEntity::luaentity_Add(u16 id, const char *name)
 
 	// Add object reference
 	// This should be userdata with metatable ObjectRef
-	objectrefGet(L, id);
+	push_objectRef(L, id);
 	luaL_checktype(L, -1, LUA_TUSERDATA);
 	if (!luaL_checkudata(L, -1, "ObjectRef"))
 		luaL_typerror(L, -1, "ObjectRef");
@@ -96,6 +97,32 @@ void ScriptApiEntity::luaentity_Activate(u16 id,
 
 		setOriginFromTable(object);
 		PCALL_RES(lua_pcall(L, 3, 0, error_handler));
+	} else {
+		lua_pop(L, 1);
+	}
+	lua_pop(L, 2); // Pop object and error handler
+}
+
+void ScriptApiEntity::luaentity_Deactivate(u16 id)
+{
+	SCRIPTAPI_PRECHECKHEADER
+
+	verbosestream << "scriptapi_luaentity_deactivate: id=" << id << std::endl;
+
+	int error_handler = PUSH_ERROR_HANDLER(L);
+
+	// Get the entity
+	luaentity_get(L, id);
+	int object = lua_gettop(L);
+
+	// Get on_deactivate
+	lua_getfield(L, -1, "on_deactivate");
+	if (!lua_isnil(L, -1)) {
+		luaL_checktype(L, -1, LUA_TFUNCTION);
+		lua_pushvalue(L, object);
+
+		setOriginFromTable(object);
+		PCALL_RES(lua_pcall(L, 1, 0, error_handler));
 	} else {
 		lua_pop(L, 1);
 	}
@@ -156,7 +183,7 @@ std::string ScriptApiEntity::luaentity_GetStaticdata(u16 id)
 }
 
 void ScriptApiEntity::luaentity_GetProperties(u16 id,
-		ObjectProperties *prop)
+		ServerActiveObject *self, ObjectProperties *prop)
 {
 	SCRIPTAPI_PRECHECKHEADER
 
@@ -168,38 +195,19 @@ void ScriptApiEntity::luaentity_GetProperties(u16 id,
 	// Set default values that differ from ObjectProperties defaults
 	prop->hp_max = 10;
 
-	/* Read stuff */
-
-	prop->hp_max = getintfield_default(L, -1, "hp_max", 10);
-
-	getboolfield(L, -1, "physical", prop->physical);
-	getboolfield(L, -1, "collide_with_objects", prop->collideWithObjects);
-
-	getfloatfield(L, -1, "weight", prop->weight);
-
-	lua_getfield(L, -1, "collisionbox");
-	if (lua_istable(L, -1))
-		prop->collisionbox = read_aabb3f(L, -1, 1.0);
-	lua_pop(L, 1);
-
-	getstringfield(L, -1, "visual", prop->visual);
-
-	getstringfield(L, -1, "mesh", prop->mesh);
-
 	// Deprecated: read object properties directly
-	read_object_properties(L, -1, prop);
+	read_object_properties(L, -1, self, prop, getServer()->idef());
 
 	// Read initial_properties
 	lua_getfield(L, -1, "initial_properties");
-	read_object_properties(L, -1, prop);
+	read_object_properties(L, -1, self, prop, getServer()->idef());
 	lua_pop(L, 1);
 }
 
-void ScriptApiEntity::luaentity_Step(u16 id, float dtime)
+void ScriptApiEntity::luaentity_Step(u16 id, float dtime,
+	const collisionMoveResult *moveresult)
 {
 	SCRIPTAPI_PRECHECKHEADER
-
-	//infostream<<"scriptapi_luaentity_step: id="<<id<<std::endl;
 
 	int error_handler = PUSH_ERROR_HANDLER(L);
 
@@ -216,9 +224,14 @@ void ScriptApiEntity::luaentity_Step(u16 id, float dtime)
 	luaL_checktype(L, -1, LUA_TFUNCTION);
 	lua_pushvalue(L, object); // self
 	lua_pushnumber(L, dtime); // dtime
+	/* moveresult */
+	if (moveresult)
+		push_collision_move_result(L, *moveresult);
+	else
+		lua_pushnil(L);
 
 	setOriginFromTable(object);
-	PCALL_RES(lua_pcall(L, 2, 0, error_handler));
+	PCALL_RES(lua_pcall(L, 3, 0, error_handler));
 
 	lua_pop(L, 2); // Pop object and error handler
 }
@@ -256,18 +269,16 @@ bool ScriptApiEntity::luaentity_Punch(u16 id,
 	setOriginFromTable(object);
 	PCALL_RES(lua_pcall(L, 6, 1, error_handler));
 
-	bool retval = lua_toboolean(L, -1);
+	bool retval = readParam<bool>(L, -1);
 	lua_pop(L, 2); // Pop object and error handler
 	return retval;
 }
 
-// Calls entity:on_rightclick(ObjectRef clicker)
-void ScriptApiEntity::luaentity_Rightclick(u16 id,
-		ServerActiveObject *clicker)
+// Calls entity[field](ObjectRef self, ObjectRef sao)
+bool ScriptApiEntity::luaentity_run_simple_callback(u16 id,
+	ServerActiveObject *sao, const char *field)
 {
 	SCRIPTAPI_PRECHECKHEADER
-
-	//infostream<<"scriptapi_luaentity_step: id="<<id<<std::endl;
 
 	int error_handler = PUSH_ERROR_HANDLER(L);
 
@@ -276,18 +287,45 @@ void ScriptApiEntity::luaentity_Rightclick(u16 id,
 	int object = lua_gettop(L);
 	// State: object is at top of stack
 	// Get function
-	lua_getfield(L, -1, "on_rightclick");
+	lua_getfield(L, -1, field);
 	if (lua_isnil(L, -1)) {
-		lua_pop(L, 2); // Pop on_rightclick and entity
-		return;
+		lua_pop(L, 2); // Pop callback field and entity
+		return false;
 	}
 	luaL_checktype(L, -1, LUA_TFUNCTION);
-	lua_pushvalue(L, object); // self
-	objectrefGetOrCreate(L, clicker); // Clicker reference
+	lua_pushvalue(L, object);  // self
+	objectrefGetOrCreate(L, sao);  // killer reference
 
 	setOriginFromTable(object);
-	PCALL_RES(lua_pcall(L, 2, 0, error_handler));
+	PCALL_RES(lua_pcall(L, 2, 1, error_handler));
 
+	bool retval = readParam<bool>(L, -1);
 	lua_pop(L, 2); // Pop object and error handler
+	return retval;
 }
 
+bool ScriptApiEntity::luaentity_on_death(u16 id, ServerActiveObject *killer)
+{
+	return luaentity_run_simple_callback(id, killer, "on_death");
+}
+
+// Calls entity:on_rightclick(ObjectRef clicker)
+void ScriptApiEntity::luaentity_Rightclick(u16 id, ServerActiveObject *clicker)
+{
+	luaentity_run_simple_callback(id, clicker, "on_rightclick");
+}
+
+void ScriptApiEntity::luaentity_on_attach_child(u16 id, ServerActiveObject *child)
+{
+	luaentity_run_simple_callback(id, child, "on_attach_child");
+}
+
+void ScriptApiEntity::luaentity_on_detach_child(u16 id, ServerActiveObject *child)
+{
+	luaentity_run_simple_callback(id, child, "on_detach_child");
+}
+
+void ScriptApiEntity::luaentity_on_detach(u16 id, ServerActiveObject *parent)
+{
+	luaentity_run_simple_callback(id, parent, "on_detach");
+}

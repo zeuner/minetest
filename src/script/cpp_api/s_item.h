@@ -17,8 +17,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#ifndef S_ITEM_H_
-#define S_ITEM_H_
+#pragma once
 
 #include "cpp_api/s_base.h"
 #include "irr_v3d.h"
@@ -43,7 +42,7 @@ public:
 	bool item_OnUse(ItemStack &item,
 			ServerActiveObject *user, const PointedThing &pointed);
 	bool item_OnSecondaryUse(ItemStack &item,
-			ServerActiveObject *user);
+			ServerActiveObject *user, const PointedThing &pointed);
 	bool item_OnCraft(ItemStack &item, ServerActiveObject *user,
 			const InventoryList *old_craft_grid, const InventoryLocation &craft_inv);
 	bool item_CraftPredict(ItemStack &item, ServerActiveObject *user,
@@ -53,10 +52,11 @@ protected:
 	friend class LuaItemStack;
 	friend class ModApiItemMod;
 
-	bool getItemCallback(const char *name, const char *callbackname);
-	void pushPointedThing(const PointedThing& pointed);
+	bool getItemCallback(const char *name, const char *callbackname, const v3s16 *p = nullptr);
+	/*!
+	 * Pushes a `pointed_thing` tabe to the stack.
+	 * \param hitpoint If true, the exact pointing location is also pushed
+	 */
+	void pushPointedThing(const PointedThing &pointed, bool hitpoint = false);
 
 };
-
-
-#endif /* S_ITEM_H_ */

@@ -21,11 +21,12 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "lua_api/l_minimap.h"
 #include "lua_api/l_internal.h"
 #include "common/c_converter.h"
-#include "minimap.h"
+#include "client/client.h"
+#include "client/minimap.h"
+#include "settings.h"
 
-LuaMinimap::LuaMinimap(Minimap *m)
+LuaMinimap::LuaMinimap(Minimap *m) : m_minimap(m)
 {
-	m_minimap = m;
 }
 
 void LuaMinimap::create(lua_State *L, Minimap *m)
@@ -88,7 +89,7 @@ int LuaMinimap::l_get_mode(lua_State *L)
 	LuaMinimap *ref = checkobject(L, 1);
 	Minimap *m = getobject(ref);
 
-	lua_pushinteger(L, m->getMinimapMode());
+	lua_pushinteger(L, m->getModeIndex());
 	return 1;
 }
 
@@ -97,35 +98,51 @@ int LuaMinimap::l_set_mode(lua_State *L)
 	LuaMinimap *ref = checkobject(L, 1);
 	Minimap *m = getobject(ref);
 
-	s32 mode = lua_tointeger(L, 2);
-	if (mode < MINIMAP_MODE_OFF ||
-		mode >= MINIMAP_MODE_COUNT) {
+	u32 mode = lua_tointeger(L, 2);
+	if (mode >= m->getMaxModeIndex())
 		return 0;
-	}
 
-	m->setMinimapMode((MinimapMode) mode);
+	m->setModeIndex(mode);
 	return 1;
 }
 
-int LuaMinimap::l_toggle_shape(lua_State *L)
+int LuaMinimap::l_set_shape(lua_State *L)
+{
+	LuaMinimap *ref = checkobject(L, 1);
+	Minimap *m = getobject(ref);
+	if (!lua_isnumber(L, 2))
+		return 0;
+
+	m->setMinimapShape((MinimapShape)((int)lua_tonumber(L, 2)));
+	return 0;
+}
+
+int LuaMinimap::l_get_shape(lua_State *L)
 {
 	LuaMinimap *ref = checkobject(L, 1);
 	Minimap *m = getobject(ref);
 
-	m->toggleMinimapShape();
+	lua_pushnumber(L, (int)m->getMinimapShape());
 	return 1;
 }
 
 int LuaMinimap::l_show(lua_State *L)
 {
+	// If minimap is disabled by config, don't show it.
+	if (!g_settings->getBool("enable_minimap"))
+		return 1;
+
 	Client *client = getClient(L);
 	assert(client);
 
 	LuaMinimap *ref = checkobject(L, 1);
 	Minimap *m = getobject(ref);
 
-	if (m->getMinimapMode() == MINIMAP_MODE_OFF)
-		m->setMinimapMode(MINIMAP_MODE_SURFACEx1);
+	// This is not very adapted to new minimap mode management. Btw, tried
+	// to do something compatible.
+
+	if (m->getModeIndex() == 0 && m->getMaxModeIndex() > 0)
+		m->setModeIndex(1);
 
 	client->showMinimap(true);
 	return 1;
@@ -139,8 +156,11 @@ int LuaMinimap::l_hide(lua_State *L)
 	LuaMinimap *ref = checkobject(L, 1);
 	Minimap *m = getobject(ref);
 
-	if (m->getMinimapMode() != MINIMAP_MODE_OFF)
-		m->setMinimapMode(MINIMAP_MODE_OFF);
+	// This is not very adapted to new minimap mode management. Btw, tried
+	// to do something compatible.
+
+	if (m->getModeIndex() != 0)
+		m->setModeIndex(0);
 
 	client->showMinimap(false);
 	return 1;
@@ -191,12 +211,12 @@ void LuaMinimap::Register(lua_State *L)
 
 	lua_pop(L, 1);  // drop metatable
 
-	luaL_openlib(L, 0, methods, 0);  // fill methodtable
+	luaL_register(L, nullptr, methods);  // fill methodtable
 	lua_pop(L, 1);  // drop methodtable
 }
 
 const char LuaMinimap::className[] = "Minimap";
-const luaL_reg LuaMinimap::methods[] = {
+const luaL_Reg LuaMinimap::methods[] = {
 	luamethod(LuaMinimap, show),
 	luamethod(LuaMinimap, hide),
 	luamethod(LuaMinimap, get_pos),
@@ -205,6 +225,7 @@ const luaL_reg LuaMinimap::methods[] = {
 	luamethod(LuaMinimap, set_angle),
 	luamethod(LuaMinimap, get_mode),
 	luamethod(LuaMinimap, set_mode),
-	luamethod(LuaMinimap, toggle_shape),
+	luamethod(LuaMinimap, set_shape),
+	luamethod(LuaMinimap, get_shape),
 	{0,0}
 };

@@ -17,14 +17,12 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#ifndef UTIL_CONTAINER_HEADER
-#define UTIL_CONTAINER_HEADER
+#pragma once
 
-#include "../irrlichttypes.h"
-#include "../exceptions.h"
-#include "../threading/mutex.h"
-#include "../threading/mutex_auto_lock.h"
-#include "../threading/semaphore.h"
+#include "irrlichttypes.h"
+#include "exceptions.h"
+#include "threading/mutex_auto_lock.h"
+#include "threading/semaphore.h"
 #include <list>
 #include <vector>
 #include <map>
@@ -81,7 +79,7 @@ template<typename Key, typename Value>
 class MutexedMap
 {
 public:
-	MutexedMap() {}
+	MutexedMap() = default;
 
 	void set(const Key &name, const Value &value)
 	{
@@ -92,8 +90,7 @@ public:
 	bool get(const Key &name, Value *result) const
 	{
 		MutexAutoLock lock(m_mutex);
-		typename std::map<Key, Value>::const_iterator n =
-			m_values.find(name);
+		auto n = m_values.find(name);
 		if (n == m_values.end())
 			return false;
 		if (result)
@@ -105,11 +102,9 @@ public:
 	{
 		MutexAutoLock lock(m_mutex);
 		std::vector<Value> result;
-		for (typename std::map<Key, Value>::const_iterator
-				it = m_values.begin();
-				it != m_values.end(); ++it){
+		result.reserve(m_values.size());
+		for (auto it = m_values.begin(); it != m_values.end(); ++it)
 			result.push_back(it->second);
-		}
 		return result;
 	}
 
@@ -117,7 +112,7 @@ public:
 
 private:
 	std::map<Key, Value> m_values;
-	mutable Mutex m_mutex;
+	mutable std::mutex m_mutex;
 };
 
 
@@ -130,14 +125,15 @@ public:
 	template<typename Key, typename U, typename Caller, typename CallerData>
 	friend class RequestQueue;
 
-	MutexedQueue() {}
+	MutexedQueue() = default;
+
 	bool empty() const
 	{
 		MutexAutoLock lock(m_mutex);
 		return m_queue.empty();
 	}
 
-	void push_back(T t)
+	void push_back(const T &t)
 	{
 		MutexAutoLock lock(m_mutex);
 		m_queue.push_back(t);
@@ -152,12 +148,12 @@ public:
 		if (m_signal.wait(wait_time_max_ms)) {
 			MutexAutoLock lock(m_mutex);
 
-			T t = m_queue.front();
+			T t = std::move(m_queue.front());
 			m_queue.pop_front();
 			return t;
-		} else {
-			return T();
 		}
+
+		return T();
 	}
 
 	T pop_front(u32 wait_time_max_ms)
@@ -165,12 +161,12 @@ public:
 		if (m_signal.wait(wait_time_max_ms)) {
 			MutexAutoLock lock(m_mutex);
 
-			T t = m_queue.front();
+			T t = std::move(m_queue.front());
 			m_queue.pop_front();
 			return t;
-		} else {
-			throw ItemNotFoundException("MutexedQueue: queue is empty");
 		}
+
+		throw ItemNotFoundException("MutexedQueue: queue is empty");
 	}
 
 	T pop_frontNoEx()
@@ -179,7 +175,7 @@ public:
 
 		MutexAutoLock lock(m_mutex);
 
-		T t = m_queue.front();
+		T t = std::move(m_queue.front());
 		m_queue.pop_front();
 		return t;
 	}
@@ -189,12 +185,12 @@ public:
 		if (m_signal.wait(wait_time_max_ms)) {
 			MutexAutoLock lock(m_mutex);
 
-			T t = m_queue.back();
+			T t = std::move(m_queue.back());
 			m_queue.pop_back();
 			return t;
-		} else {
-			throw ItemNotFoundException("MutexedQueue: queue is empty");
 		}
+
+		throw ItemNotFoundException("MutexedQueue: queue is empty");
 	}
 
 	/* this version of pop_back returns a empty element of T on timeout.
@@ -205,12 +201,12 @@ public:
 		if (m_signal.wait(wait_time_max_ms)) {
 			MutexAutoLock lock(m_mutex);
 
-			T t = m_queue.back();
+			T t = std::move(m_queue.back());
 			m_queue.pop_back();
 			return t;
-		} else {
-			return T();
 		}
+
+		return T();
 	}
 
 	T pop_backNoEx()
@@ -219,18 +215,18 @@ public:
 
 		MutexAutoLock lock(m_mutex);
 
-		T t = m_queue.back();
+		T t = std::move(m_queue.back());
 		m_queue.pop_back();
 		return t;
 	}
 
 protected:
-	Mutex &getMutex() { return m_mutex; }
+	std::mutex &getMutex() { return m_mutex; }
 
 	std::deque<T> &getQueue() { return m_queue; }
 
 	std::deque<T> m_queue;
-	mutable Mutex m_mutex;
+	mutable std::mutex m_mutex;
 	Semaphore m_signal;
 };
 
@@ -302,6 +298,3 @@ private:
 	// we can't use std::deque here, because its iterators get invalidated
 	std::list<K> m_queue;
 };
-
-#endif
-

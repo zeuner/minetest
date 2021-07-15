@@ -16,12 +16,13 @@ You should have received a copy of the GNU Lesser General Public License along
 with this program; if not, write to the Free Software Foundation, Inc.,
 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
-#ifndef L_NODEMETA_H_
-#define L_NODEMETA_H_
+
+#pragma once
 
 #include "lua_api/l_base.h"
 #include "lua_api/l_metadata.h"
 #include "irrlichttypes_bloated.h"
+#include "nodemetadata.h"
 
 class ServerEnvironment;
 class NodeMetadata;
@@ -33,10 +34,13 @@ class NodeMetadata;
 class NodeMetaRef : public MetaDataRef {
 private:
 	v3s16 m_p;
-	ServerEnvironment *m_env;
+	ServerEnvironment *m_env = nullptr;
+	Metadata *m_meta = nullptr;
+	bool m_is_local = false;
 
 	static const char className[];
-	static const luaL_reg methods[];
+	static const luaL_Reg methodsServer[];
+	static const luaL_Reg methodsClient[];
 
 	static NodeMetaRef *checkobject(lua_State *L, int narg);
 
@@ -56,7 +60,7 @@ private:
 	virtual Metadata* getmeta(bool auto_create);
 	virtual void clearMeta();
 
-	virtual void reportMetadataChange();
+	virtual void reportMetadataChange(const std::string *name = nullptr);
 
 	virtual void handleToTable(lua_State *L, Metadata *_meta);
 	virtual bool handleFromTable(lua_State *L, int table, Metadata *_meta);
@@ -69,16 +73,23 @@ private:
 	// get_inventory(self)
 	static int l_get_inventory(lua_State *L);
 
+	// mark_as_private(self, <string> or {<string>, <string>, ...})
+	static int l_mark_as_private(lua_State *L);
+
 public:
 	NodeMetaRef(v3s16 p, ServerEnvironment *env);
+	NodeMetaRef(Metadata *meta);
 
-	~NodeMetaRef();
+	~NodeMetaRef() = default;
 
 	// Creates an NodeMetaRef and leaves it on top of stack
 	// Not callable from Lua; all references are created on the C side.
 	static void create(lua_State *L, v3s16 p, ServerEnvironment *env);
 
-	static void Register(lua_State *L);
-};
+	// Client-sided version of the above
+	static void createClient(lua_State *L, Metadata *meta);
 
-#endif /* L_NODEMETA_H_ */
+	static void RegisterCommon(lua_State *L);
+	static void Register(lua_State *L);
+	static void RegisterClient(lua_State *L);
+};

@@ -17,19 +17,17 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#ifndef L_MINIMAP_H_
-#define L_MINIMAP_H_
+#pragma once
 
 #include "l_base.h"
 
-
 class Minimap;
 
-class LuaMinimap : public ModApiBase {
+class LuaMinimap : public ModApiBase
+{
 private:
-
 	static const char className[];
-	static const luaL_reg methods[];
+	static const luaL_Reg methods[];
 
 	// garbage collector
 	static int gc_object(lua_State *L);
@@ -46,19 +44,19 @@ private:
 	static int l_show(lua_State *L);
 	static int l_hide(lua_State *L);
 
-	static int l_toggle_shape(lua_State *L);
+	static int l_set_shape(lua_State *L);
+	static int l_get_shape(lua_State *L);
 
-	Minimap *m_minimap;
+	Minimap *m_minimap = nullptr;
+
 public:
 	LuaMinimap(Minimap *m);
-	~LuaMinimap() {}
+	~LuaMinimap() = default;
 
 	static void create(lua_State *L, Minimap *object);
 
 	static LuaMinimap *checkobject(lua_State *L, int narg);
-	static Minimap* getobject(LuaMinimap *ref);
+	static Minimap *getobject(LuaMinimap *ref);
 
 	static void Register(lua_State *L);
 };
-
-#endif // L_MINIMAP_H_

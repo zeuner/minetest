@@ -20,7 +20,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #include "lua_api/l_storage.h"
 #include "l_internal.h"
-#include "mods.h"
+#include "content/mods.h"
 #include "server.h"
 
 int ModApiStorage::l_get_mod_storage(lua_State *L)
@@ -30,13 +30,14 @@ int ModApiStorage::l_get_mod_storage(lua_State *L)
 		return 0;
 	}
 
-	std::string mod_name = lua_tostring(L, -1);
+	std::string mod_name = readParam<std::string>(L, -1);
 
 	ModMetadata *store = new ModMetadata(mod_name);
 	if (IGameDef *gamedef = getGameDef(L)) {
 		store->load(gamedef->getModStoragePath());
 		gamedef->registerModStorage(store);
 	} else {
+		delete store;
 		assert(false); // this should not happen
 	}
 
@@ -55,6 +56,11 @@ void ModApiStorage::Initialize(lua_State *L, int top)
 StorageRef::StorageRef(ModMetadata *object):
 	m_object(object)
 {
+}
+
+StorageRef::~StorageRef()
+{
+	delete m_object;
 }
 
 void StorageRef::create(lua_State *L, ModMetadata *object)
@@ -98,9 +104,13 @@ void StorageRef::Register(lua_State *L)
 	lua_pushcfunction(L, gc_object);
 	lua_settable(L, metatable);
 
+	lua_pushliteral(L, "__eq");
+	lua_pushcfunction(L, l_equals);
+	lua_settable(L, metatable);
+
 	lua_pop(L, 1);  // drop metatable
 
-	luaL_openlib(L, 0, methods, 0);  // fill methodtable
+	luaL_register(L, nullptr, methods);  // fill methodtable
 	lua_pop(L, 1);  // drop methodtable
 }
 
@@ -129,7 +139,9 @@ void StorageRef::clearMeta()
 }
 
 const char StorageRef::className[] = "StorageRef";
-const luaL_reg StorageRef::methods[] = {
+const luaL_Reg StorageRef::methods[] = {
+	luamethod(MetaDataRef, contains),
+	luamethod(MetaDataRef, get),
 	luamethod(MetaDataRef, get_string),
 	luamethod(MetaDataRef, set_string),
 	luamethod(MetaDataRef, get_int),
@@ -138,5 +150,6 @@ const luaL_reg StorageRef::methods[] = {
 	luamethod(MetaDataRef, set_float),
 	luamethod(MetaDataRef, to_table),
 	luamethod(MetaDataRef, from_table),
+	luamethod(MetaDataRef, equals),
 	{0,0}
 };

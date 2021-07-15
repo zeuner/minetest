@@ -20,10 +20,12 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "test.h"
 
 #include "log.h"
-#include "socket.h"
+#include "porting.h"
 #include "settings.h"
 #include "util/serialize.h"
 #include "network/connection.h"
+#include "network/networkpacket.h"
+#include "network/socket.h"
 
 class TestConnection : public TestBase {
 public:
@@ -37,6 +39,7 @@ public:
 
 	void runTests(IGameDef *gamedef);
 
+	void testNetworkPacketSerialize();
 	void testHelpers();
 	void testConnectSendReceive();
 };
@@ -45,6 +48,7 @@ static TestConnection g_test_instance;
 
 void TestConnection::runTests(IGameDef *gamedef)
 {
+	TEST(testNetworkPacketSerialize);
 	TEST(testHelpers);
 	TEST(testConnectSendReceive);
 }
@@ -53,12 +57,7 @@ void TestConnection::runTests(IGameDef *gamedef)
 
 struct Handler : public con::PeerHandler
 {
-	Handler(const char *a_name)
-	{
-		count = 0;
-		last_id = 0;
-		name = a_name;
-	}
+	Handler(const char *a_name) : name(a_name) {}
 
 	void peerAdded(con::Peer *peer)
 	{
@@ -76,16 +75,49 @@ struct Handler : public con::PeerHandler
 		count--;
 	}
 
-	s32 count;
-	u16 last_id;
+	s32 count = 0;
+	u16 last_id = 0;
 	const char *name;
 };
+
+void TestConnection::testNetworkPacketSerialize()
+{
+	const static u8 expected[] = {
+		0x00, 0x7b,
+		0x00, 0x02, 0xd8, 0x42, 0xdf, 0x9a
+	};
+
+	if (sizeof(wchar_t) == 2)
+		warningstream << __func__ << " may fail on this platform." << std::endl;
+
+	{
+		NetworkPacket pkt(123, 0);
+
+		// serializing wide strings should do surrogate encoding, we test that here
+		pkt << std::wstring(L"\U00020b9a");
+
+		SharedBuffer<u8> buf = pkt.oldForgePacket();
+		UASSERTEQ(int, buf.getSize(), sizeof(expected));
+		UASSERT(!memcmp(expected, &buf[0], buf.getSize()));
+	}
+
+	{
+		NetworkPacket pkt;
+		pkt.putRawPacket(expected, sizeof(expected), 0);
+
+		// same for decoding
+		std::wstring pkt_s;
+		pkt >> pkt_s;
+
+		UASSERT(pkt_s == L"\U00020b9a");
+	}
+}
 
 void TestConnection::testHelpers()
 {
 	// Some constants for testing
 	u32 proto_id = 0x12345678;
-	u16 peer_id = 123;
+	session_t peer_id = 123;
 	u8 channel = 2;
 	SharedBuffer<u8> data1(1);
 	data1[0] = 100;
@@ -98,7 +130,7 @@ void TestConnection::testHelpers()
 		We should now have a packet with this data:
 		Header:
 			[0] u32 protocol_id
-			[4] u16 sender_peer_id
+			[4] session_t sender_peer_id
 			[6] u8 channel
 		Data:
 			[7] u8 data1[0]
@@ -119,7 +151,7 @@ void TestConnection::testHelpers()
 	infostream<<"data1[0]="<<((u32)data1[0]&0xff)<<std::endl;*/
 
 	UASSERT(p2.getSize() == 3 + data1.getSize());
-	UASSERT(readU8(&p2[0]) == TYPE_RELIABLE);
+	UASSERT(readU8(&p2[0]) == con::PACKET_TYPE_RELIABLE);
 	UASSERT(readU16(&p2[1]) == seqnum);
 	UASSERT(readU8(&p2[3]) == data1[0]);
 }
@@ -127,8 +159,6 @@ void TestConnection::testHelpers()
 
 void TestConnection::testConnectSendReceive()
 {
-	DSTACK("TestConnection::Run");
-
 	/*
 		Test some real connections
 
@@ -250,7 +280,7 @@ void TestConnection::testConnectSendReceive()
 		NetworkPacket pkt;
 		pkt.putRawPacket((u8*) "Hello World !", 14, 0);
 
-		Buffer<u8> sentdata = pkt.oldForgePacket();
+		SharedBuffer<u8> sentdata = pkt.oldForgePacket();
 
 		infostream<<"** running client.Send()"<<std::endl;
 		client.Send(PEER_ID_SERVER, 0, &pkt, true);
@@ -265,12 +295,12 @@ void TestConnection::testConnectSendReceive()
 				<< ", data=" << (const char*)pkt.getU8Ptr(0)
 				<< std::endl;
 
-		Buffer<u8> recvdata = pkt.oldForgePacket();
+		SharedBuffer<u8> recvdata = pkt.oldForgePacket();
 
 		UASSERT(memcmp(*sentdata, *recvdata, recvdata.getSize()) == 0);
 	}
 
-	u16 peer_id_client = 2;
+	session_t peer_id_client = 2;
 	/*
 		Send a large packet
 	*/
@@ -286,7 +316,7 @@ void TestConnection::testConnectSendReceive()
 			if (i % 2 == 0)
 				infostream << " ";
 			char buf[10];
-			snprintf(buf, 10, "%.2X",
+			porting::mt_snprintf(buf, sizeof(buf), "%.2X",
 				((int)((const char *)pkt.getU8Ptr(0))[i]) & 0xff);
 			infostream<<buf;
 		}
@@ -294,18 +324,18 @@ void TestConnection::testConnectSendReceive()
 			infostream << "...";
 		infostream << std::endl;
 
-		Buffer<u8> sentdata = pkt.oldForgePacket();
+		SharedBuffer<u8> sentdata = pkt.oldForgePacket();
 
 		server.Send(peer_id_client, 0, &pkt, true);
 
 		//sleep_ms(3000);
 
-		Buffer<u8> recvdata;
+		SharedBuffer<u8> recvdata;
 		infostream << "** running client.Receive()" << std::endl;
-		u16 peer_id = 132;
+		session_t peer_id = 132;
 		u16 size = 0;
 		bool received = false;
-		u32 timems0 = porting::getTimeMs();
+		u64 timems0 = porting::getTimeMs();
 		for (;;) {
 			if (porting::getTimeMs() - timems0 > 5000 || received)
 				break;
@@ -329,7 +359,7 @@ void TestConnection::testConnectSendReceive()
 			if (i % 2 == 0)
 				infostream << " ";
 			char buf[10];
-			snprintf(buf, 10, "%.2X", ((int)(recvdata[i])) & 0xff);
+			porting::mt_snprintf(buf, sizeof(buf), "%.2X", ((int)(recvdata[i])) & 0xff);
 			infostream << buf;
 		}
 		if (size > 20)

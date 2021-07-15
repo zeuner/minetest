@@ -17,8 +17,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#ifndef L_ITEM_H_
-#define L_ITEM_H_
+#pragma once
 
 #include "lua_api/l_base.h"
 #include "inventory.h"  // ItemStack
@@ -28,12 +27,15 @@ private:
 	ItemStack m_stack;
 
 	static const char className[];
-	static const luaL_reg methods[];
+	static const luaL_Reg methods[];
 
 	// Exported functions
 
 	// garbage collector
 	static int gc_object(lua_State *L);
+
+	// __tostring metamethod
+	static int mt_tostring(lua_State *L);
 
 	// is_empty(self) -> true/false
 	static int l_is_empty(lua_State *L);
@@ -66,6 +68,12 @@ private:
 	// DEPRECATED
 	// set_metadata(self, string)
 	static int l_set_metadata(lua_State *L);
+
+	// get_description(self)
+	static int l_get_description(lua_State *L);
+
+	// get_short_description(self)
+	static int l_get_short_description(lua_State *L);
 
 	// clear(self) -> true
 	static int l_clear(lua_State *L);
@@ -122,7 +130,7 @@ private:
 
 public:
 	LuaItemStack(const ItemStack &item);
-	~LuaItemStack();
+	~LuaItemStack() = default;
 
 	const ItemStack& getItem() const;
 	ItemStack& getItem();
@@ -147,7 +155,3 @@ private:
 public:
 	static void Initialize(lua_State *L, int top);
 };
-
-
-
-#endif /* L_ITEM_H_ */

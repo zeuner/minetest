@@ -17,12 +17,12 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#ifndef L_SERVER_H_
-#define L_SERVER_H_
+#pragma once
 
 #include "lua_api/l_base.h"
 
-class ModApiServer : public ModApiBase {
+class ModApiServer : public ModApiBase
+{
 private:
 	// request_shutdown([message], [reconnect])
 	static int l_request_shutdown(lua_State *L);
@@ -67,13 +67,19 @@ private:
 	// sound_stop(handle)
 	static int l_sound_stop(lua_State *L);
 
+	// sound_fade(handle, step, gain)
+	static int l_sound_fade(lua_State *L);
+
+	// dynamic_add_media(filepath)
+	static int l_dynamic_add_media_raw(lua_State *L);
+
 	// get_player_privs(name, text)
 	static int l_get_player_privs(lua_State *L);
 
 	// get_player_ip()
 	static int l_get_player_ip(lua_State *L);
 
-	// get_player_information()
+	// get_player_information(name)
 	static int l_get_player_information(lua_State *L);
 
 	// get_ban_list()
@@ -91,6 +97,9 @@ private:
 	// kick_player(name, [message]) -> success
 	static int l_kick_player(lua_State *L);
 
+	// remove_player(name)
+	static int l_remove_player(lua_State *L);
+
 	// notify_authentication_modified(name)
 	static int l_notify_authentication_modified(lua_State *L);
 
@@ -100,14 +109,6 @@ private:
 	// set_last_run_mod(modname)
 	static int l_set_last_run_mod(lua_State *L);
 
-#ifndef NDEBUG
-	//  cause_error(type_of_error)
-	static int l_cause_error(lua_State *L);
-#endif
-
 public:
 	static void Initialize(lua_State *L, int top);
-
 };
-
-#endif /* L_SERVER_H_ */

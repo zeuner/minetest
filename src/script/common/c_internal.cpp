@@ -20,41 +20,16 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "common/c_internal.h"
 #include "debug.h"
 #include "log.h"
+#include "porting.h"
 #include "settings.h"
 
 std::string script_get_backtrace(lua_State *L)
 {
-	std::string s;
-	lua_getglobal(L, "debug");
-	if(lua_istable(L, -1)){
-		lua_getfield(L, -1, "traceback");
-		if(lua_isfunction(L, -1)) {
-			lua_call(L, 0, 1);
-			if(lua_isstring(L, -1)){
-				s = lua_tostring(L, -1);
-			}
-		}
-		lua_pop(L, 1);
-	}
+	lua_rawgeti(L, LUA_REGISTRYINDEX, CUSTOM_RIDX_BACKTRACE);
+	lua_call(L, 0, 1);
+	std::string result = luaL_checkstring(L, -1);
 	lua_pop(L, 1);
-	return s;
-}
-
-int script_error_handler(lua_State *L) {
-	lua_getglobal(L, "debug");
-	if (!lua_istable(L, -1)) {
-		lua_pop(L, 1);
-		return 1;
-	}
-	lua_getfield(L, -1, "traceback");
-	if (!lua_isfunction(L, -1)) {
-		lua_pop(L, 2);
-		return 1;
-	}
-	lua_pushvalue(L, 1);
-	lua_pushinteger(L, 2);
-	lua_call(L, 2, 1);
-	return 1;
+	return result;
 }
 
 int script_exception_wrapper(lua_State *L, lua_CFunction f)
@@ -72,7 +47,7 @@ int script_exception_wrapper(lua_State *L, lua_CFunction f)
 /*
  * Note that we can't get tracebacks for LUA_ERRMEM or LUA_ERRERR (without
  * hacking Lua internals).  For LUA_ERRMEM, this is because memory errors will
- * not execute the the error handler, and by the time lua_pcall returns the
+ * not execute the error handler, and by the time lua_pcall returns the
  * execution stack will have already been unwound.  For LUA_ERRERR, there was
  * another error while trying to generate a backtrace from a LUA_ERRRUN.  It is
  * presumed there is an error with the internal Lua state and thus not possible
@@ -110,7 +85,7 @@ void script_error(lua_State *L, int pcall_result, const char *mod, const char *f
 		err_descr = "<no description>";
 
 	char buf[256];
-	snprintf(buf, sizeof(buf), "%s error from mod '%s' in callback %s(): ",
+	porting::mt_snprintf(buf, sizeof(buf), "%s error from mod '%s' in callback %s(): ",
 		err_type, mod, fxn);
 
 	std::string err_msg(buf);
@@ -160,33 +135,48 @@ void script_run_callbacks_f(lua_State *L, int nargs,
 	lua_remove(L, error_handler);
 }
 
-void log_deprecated(lua_State *L, const std::string &message)
+static void script_log(lua_State *L, const std::string &message,
+	std::ostream &log_to, bool do_error, int stack_depth)
 {
-	static bool configured = false;
-	static bool do_log     = false;
-	static bool do_error   = false;
+	lua_Debug ar;
+
+	log_to << message << " ";
+	if (lua_getstack(L, stack_depth, &ar)) {
+		FATAL_ERROR_IF(!lua_getinfo(L, "Sl", &ar), "lua_getinfo() failed");
+		log_to << "(at " << ar.short_src << ":" << ar.currentline << ")";
+	} else {
+		log_to << "(at ?:?)";
+	}
+	log_to << std::endl;
+
+	if (do_error)
+		script_error(L, LUA_ERRRUN, NULL, NULL);
+	else
+		infostream << script_get_backtrace(L) << std::endl;
+}
+
+DeprecatedHandlingMode get_deprecated_handling_mode()
+{
+	static thread_local bool configured = false;
+	static thread_local DeprecatedHandlingMode ret = DeprecatedHandlingMode::Ignore;
 
 	// Only read settings on first call
 	if (!configured) {
 		std::string value = g_settings->get("deprecated_lua_api_handling");
 		if (value == "log") {
-			do_log = true;
+			ret = DeprecatedHandlingMode::Log;
 		} else if (value == "error") {
-			do_log   = true;
-			do_error = true;
+			ret = DeprecatedHandlingMode::Error;
 		}
+		configured = true;
 	}
 
-	if (do_log) {
-		warningstream << message << std::endl;
-		// L can be NULL if we get called by log_deprecated(const std::string &msg)
-		// from scripting_game.cpp.
-		if (L) {
-			if (do_error)
-				script_error(L, LUA_ERRRUN, NULL, NULL);
-			else
-				infostream << script_get_backtrace(L) << std::endl;
-		}
-	}
+	return ret;
 }
 
+void log_deprecated(lua_State *L, const std::string &message, int stack_depth)
+{
+	DeprecatedHandlingMode mode = get_deprecated_handling_mode();
+	if (mode != DeprecatedHandlingMode::Ignore)
+		script_log(L, message, warningstream, mode == DeprecatedHandlingMode::Error, stack_depth);
+}

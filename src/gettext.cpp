@@ -18,9 +18,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 */
 
 #include <string>
-#include <string.h>
+#include <cstring>
 #include <iostream>
-#include <stdlib.h>
+#include <cstdlib>
 #include "gettext.h"
 #include "util/string.h"
 #include "log.h"
@@ -217,7 +217,10 @@ void init_gettext(const char *path, const std::string &configured_language,
 #endif
 #endif
 
-	static std::string name = lowercase(PROJECT_NAME);
+	std::string name = lowercase(PROJECT_NAME);
+	infostream << "Gettext: domainname=\"" << name
+		<< "\" path=\"" << path << "\"" << std::endl;
+
 	bindtextdomain(name.c_str(), path);
 	textdomain(name.c_str());
 

@@ -15,10 +15,14 @@
 --with this program; if not, write to the Free Software Foundation, Inc.,
 --51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
+local S = core.get_translator("__builtin")
+-- Note: In this file, only messages are translated
+-- but not the table itself, to keep it simple.
+
 local DIR_DELIM, LINE_DELIM = DIR_DELIM, "\n"
 local table, unpack, string, pairs, io, os = table, unpack, string, pairs, io, os
 local rep, sprintf, tonumber = string.rep, string.format, tonumber
-local core, setting_get = core, core.setting_get
+local core, settings = core, core.settings
 local reporter = {}
 
 ---
@@ -104,11 +108,11 @@ local TxtFormatter = Formatter:new {
 	end,
 	format = function(self, filter)
 		local profile = self.profile
-		self:print("Values below show absolute/relative times spend per server step by the instrumented function.")
-		self:print("A total of %d samples were taken", profile.stats_total.samples)
+		self:print(S("Values below show absolute/relative times spend per server step by the instrumented function."))
+		self:print(S("A total of @1 sample(s) were taken.", profile.stats_total.samples))
 
 		if filter then
-			self:print("The output is limited to '%s'", filter)
+			self:print(S("The output is limited to '@1'.", filter))
 		end
 
 		self:print()
@@ -229,7 +233,7 @@ end
 
 local worldpath = core.get_worldpath()
 local function get_save_path(format, filter)
-	local report_path = setting_get("profiler.report_path") or ""
+	local report_path = settings:get("profiler.report_path") or ""
 	if report_path ~= "" then
 		core.mkdir(sprintf("%s%s%s", worldpath, DIR_DELIM, report_path))
 	end
@@ -249,7 +253,7 @@ end
 --
 function reporter.save(profile, format, filter)
 	if not format or format == "" then
-		format = setting_get("profiler.default_report_format") or "txt"
+		format = settings:get("profiler.default_report_format") or "txt"
 	end
 	if filter == "" then
 		filter = nil
@@ -259,19 +263,18 @@ function reporter.save(profile, format, filter)
 
 	local output, io_err = io.open(path, "w")
 	if not output then
-		return false, "Saving of profile failed with: " .. io_err
+		return false, S("Saving of profile failed: @1", io_err)
 	end
 	local content, err = serialize_profile(profile, format, filter)
 	if not content then
 		output:close()
-		return false, "Saving of profile failed with: " .. err
+		return false, S("Saving of profile failed: @1", err)
 	end
 	output:write(content)
 	output:close()
 
-	local logmessage = "Profile saved to " .. path
-	core.log("action", logmessage)
-	return true, logmessage
+	core.log("action", "Profile saved to " .. path)
+	return true, S("Profile saved to @1", path)
 end
 
 return reporter

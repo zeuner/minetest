@@ -17,206 +17,63 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#ifndef PARTICLES_HEADER
-#define PARTICLES_HEADER
+#pragma once
 
-#define DIGGING_PARTICLES_AMOUNT 10
-
-#include <iostream>
-#include "irrlichttypes_extrabloated.h"
-#include "client/tile.h"
-#include "localplayer.h"
-#include "environment.h"
+#include <string>
+#include "irrlichttypes_bloated.h"
 #include "tileanimation.h"
+#include "mapnode.h"
 
-struct ClientEvent;
-class ParticleManager;
-class ClientEnvironment;
-struct MapNode;
-struct ContentFeatures;
+// This file defines the particle-related structures that both the server and
+// client need. The ParticleManager and rendering is in client/particles.h
 
-class Particle : public scene::ISceneNode
-{
-	public:
-	Particle(
-		IGameDef* gamedef,
-		scene::ISceneManager* mgr,
-		LocalPlayer *player,
-		ClientEnvironment *env,
-		v3f pos,
-		v3f velocity,
-		v3f acceleration,
-		float expirationtime,
-		float size,
-		bool collisiondetection,
-		bool collision_removal,
-		bool vertical,
-		video::ITexture *texture,
-		v2f texpos,
-		v2f texsize,
-		const struct TileAnimationParams &anim,
-		u8 glow,
-		video::SColor color = video::SColor(0xFFFFFFFF)
-	);
-	~Particle();
+struct CommonParticleParams {
+	bool collisiondetection = false;
+	bool collision_removal = false;
+	bool object_collision = false;
+	bool vertical = false;
+	std::string texture;
+	struct TileAnimationParams animation;
+	u8 glow = 0;
+	MapNode node;
+	u8 node_tile = 0;
 
-	virtual const aabb3f &getBoundingBox() const
-	{
-		return m_box;
+	CommonParticleParams() {
+		animation.type = TAT_NONE;
+		node.setContent(CONTENT_IGNORE);
 	}
 
-	virtual u32 getMaterialCount() const
-	{
-		return 1;
+	/* This helper is useful for copying params from
+	 * ParticleSpawnerParameters to ParticleParameters */
+	inline void copyCommon(CommonParticleParams &to) const {
+		to.collisiondetection = collisiondetection;
+		to.collision_removal = collision_removal;
+		to.object_collision = object_collision;
+		to.vertical = vertical;
+		to.texture = texture;
+		to.animation = animation;
+		to.glow = glow;
+		to.node = node;
+		to.node_tile = node_tile;
 	}
-
-	virtual video::SMaterial& getMaterial(u32 i)
-	{
-		return m_material;
-	}
-
-	virtual void OnRegisterSceneNode();
-	virtual void render();
-
-	void step(float dtime);
-
-	bool get_expired ()
-	{ return m_expiration < m_time; }
-
-private:
-	void updateLight();
-	void updateVertices();
-
-	video::S3DVertex m_vertices[4];
-	float m_time;
-	float m_expiration;
-
-	ClientEnvironment *m_env;
-	IGameDef *m_gamedef;
-	aabb3f m_box;
-	aabb3f m_collisionbox;
-	video::SMaterial m_material;
-	v2f m_texpos;
-	v2f m_texsize;
-	v3f m_pos;
-	v3f m_velocity;
-	v3f m_acceleration;
-	LocalPlayer *m_player;
-	float m_size;
-	//! Color without lighting
-	video::SColor m_base_color;
-	//! Final rendered color
-	video::SColor m_color;
-	bool m_collisiondetection;
-	bool m_collision_removal;
-	bool m_vertical;
-	v3s16 m_camera_offset;
-	struct TileAnimationParams m_animation;
-	float m_animation_time;
-	int m_animation_frame;
-	u8 m_glow;
 };
 
-class ParticleSpawner
-{
-	public:
-	ParticleSpawner(IGameDef* gamedef,
-		scene::ISceneManager *smgr,
-		LocalPlayer *player,
-		u16 amount,
-		float time,
-		v3f minp, v3f maxp,
-		v3f minvel, v3f maxvel,
-		v3f minacc, v3f maxacc,
-		float minexptime, float maxexptime,
-		float minsize, float maxsize,
-		bool collisiondetection,
-		bool collision_removal,
-		u16 attached_id,
-		bool vertical,
-		video::ITexture *texture,
-		u32 id,
-		const struct TileAnimationParams &anim, u8 glow,
-		ParticleManager* p_manager);
+struct ParticleParameters : CommonParticleParams {
+	v3f pos;
+	v3f vel;
+	v3f acc;
+	f32 expirationtime = 1;
+	f32 size = 1;
 
-	~ParticleSpawner();
-
-	void step(float dtime, ClientEnvironment *env);
-
-	bool get_expired ()
-	{ return (m_amount <= 0) && m_spawntime != 0; }
-
-	private:
-	ParticleManager* m_particlemanager;
-	float m_time;
-	IGameDef *m_gamedef;
-	scene::ISceneManager *m_smgr;
-	LocalPlayer *m_player;
-	u16 m_amount;
-	float m_spawntime;
-	v3f m_minpos;
-	v3f m_maxpos;
-	v3f m_minvel;
-	v3f m_maxvel;
-	v3f m_minacc;
-	v3f m_maxacc;
-	float m_minexptime;
-	float m_maxexptime;
-	float m_minsize;
-	float m_maxsize;
-	video::ITexture *m_texture;
-	std::vector<float> m_spawntimes;
-	bool m_collisiondetection;
-	bool m_collision_removal;
-	bool m_vertical;
-	u16 m_attached_id;
-	struct TileAnimationParams m_animation;
-	u8 m_glow;
+	void serialize(std::ostream &os, u16 protocol_ver) const;
+	void deSerialize(std::istream &is, u16 protocol_ver);
 };
 
-/**
- * Class doing particle as well as their spawners handling
- */
-class ParticleManager
-{
-friend class ParticleSpawner;
-public:
-	ParticleManager(ClientEnvironment* env);
-	~ParticleManager();
+struct ParticleSpawnerParameters : CommonParticleParams {
+	u16 amount = 1;
+	v3f minpos, maxpos, minvel, maxvel, minacc, maxacc;
+	f32 time = 1;
+	f32 minexptime = 1, maxexptime = 1, minsize = 1, maxsize = 1;
 
-	void step (float dtime);
-
-	void handleParticleEvent(ClientEvent *event, Client *client,
-			scene::ISceneManager* smgr, LocalPlayer *player);
-
-	void addDiggingParticles(IGameDef* gamedef, scene::ISceneManager* smgr,
-		LocalPlayer *player, v3s16 pos, const MapNode &n,
-		const ContentFeatures &f);
-
-	void addPunchingParticles(IGameDef* gamedef, scene::ISceneManager* smgr,
-		LocalPlayer *player, v3s16 pos, const MapNode &n,
-		const ContentFeatures &f);
-
-	void addNodeParticle(IGameDef* gamedef, scene::ISceneManager* smgr,
-		LocalPlayer *player, v3s16 pos, const MapNode &n,
-		const ContentFeatures &f);
-
-protected:
-	void addParticle(Particle* toadd);
-
-private:
-
-	void stepParticles (float dtime);
-	void stepSpawners (float dtime);
-
-	void clearAll ();
-
-	std::vector<Particle*> m_particles;
-	std::map<u32, ParticleSpawner*> m_particle_spawners;
-
-	ClientEnvironment* m_env;
-	Mutex m_particle_list_lock;
-	Mutex m_spawner_list_lock;
+	// For historical reasons no (de-)serialization methods here
 };
-
-#endif

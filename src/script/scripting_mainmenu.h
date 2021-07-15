@@ -17,8 +17,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#ifndef SCRIPTING_MAINMENU_H_
-#define SCRIPTING_MAINMENU_H_
+#pragma once
 
 #include "cpp_api/s_base.h"
 #include "cpp_api/s_mainmenu.h"
@@ -39,13 +38,11 @@ public:
 	void step();
 
 	// Pass async events from engine to async threads
-	unsigned int queueAsync(std::string serialized_func,
-			std::string serialized_params);
+	unsigned int queueAsync(const std::string &serialized_func,
+			const std::string &serialized_params);
 private:
 	void initializeModApi(lua_State *L, int top);
+	static void registerLuaClasses(lua_State *L, int top);
 
 	AsyncEngine asyncEngine;
 };
-
-
-#endif /* SCRIPTING_MAINMENU_H_ */
