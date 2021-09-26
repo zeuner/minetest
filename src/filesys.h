@@ -36,6 +36,10 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define PATH_DELIM ":"
 #endif
 
+namespace irr { namespace io {
+class IFileSystem;
+}}
+
 namespace fs
 {
 
@@ -66,6 +70,10 @@ bool DeleteSingleFileOrEmptyDirectory(const std::string &path);
 
 // Returns path to temp directory, can return "" on error
 std::string TempPath();
+
+// Returns path to securely-created temporary file (will already exist when this function returns)
+// can return "" on error
+std::string CreateTempFile();
 
 /* Returns a list of subdirectories, including the path itself, but excluding
        hidden directories (whose names start with . or _)
@@ -124,6 +132,8 @@ std::string AbsolutePath(const std::string &path);
 const char *GetFilenameFromPath(const char *path);
 
 bool safeWriteToFile(const std::string &path, const std::string &content);
+
+bool extractZipFile(irr::io::IFileSystem *fs, const char *filename, const std::string &destination);
 
 bool ReadFile(const std::string &path, std::string &out);
 

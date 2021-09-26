@@ -45,6 +45,7 @@ struct ClientEvent;
 struct MeshMakeData;
 struct ChatMessage;
 class MapBlockMesh;
+class RenderingEngine;
 class IWritableTextureSource;
 class IWritableShaderSource;
 class IWritableItemDefManager;
@@ -52,6 +53,7 @@ class ISoundManager;
 class NodeDefManager;
 //class IWritableCraftDefManager;
 class ClientMediaDownloader;
+class SingleMediaDownloader;
 struct MapDrawControl;
 class ModChannelMgr;
 class MtEventManager;
@@ -123,6 +125,7 @@ public:
 			NodeDefManager *nodedef,
 			ISoundManager *sound,
 			MtEventManager *event,
+			RenderingEngine *rendering_engine,
 			bool ipv6,
 			GameUI *game_ui
 	);
@@ -243,6 +246,7 @@ public:
 	void sendDamage(u16 damage);
 	void sendRespawn();
 	void sendReady();
+	void sendHaveMedia(const std::vector<u32> &tokens);
 
 	ClientEnvironment& getEnv() { return m_env; }
 	ITextureSource *tsrc() { return getTextureSource(); }
@@ -321,6 +325,10 @@ public:
 		m_access_denied = true;
 		m_access_denied_reason = reason;
 	}
+	inline void setFatalError(const LuaError &e)
+	{
+		setFatalError(std::string("Lua: ") + e.what());
+	}
 
 	// Renaming accessDeniedReason to better name could be good as it's used to
 	// disconnect client when CSM failed.
@@ -345,6 +353,7 @@ public:
 	float mediaReceiveProgress();
 
 	void afterContentReceived();
+	void showUpdateProgressTexture(void *args, u32 progress, u32 max_progress);
 
 	float getRTT();
 	float getCurRate();
@@ -353,6 +362,7 @@ public:
 	void setCamera(Camera* camera) { m_camera = camera; }
 
 	Camera* getCamera () { return m_camera; }
+	scene::ISceneManager *getSceneManager();
 
 	bool shouldShowMinimap() const;
 
@@ -379,6 +389,7 @@ public:
 	// Insert a media file appropriately into the appropriate manager
 	bool loadMedia(const std::string &data, const std::string &filename,
 		bool from_media_push = false);
+
 	// Send a request for conventional media transfer
 	void request_media(const std::vector<std::string> &file_requests);
 
@@ -469,6 +480,7 @@ private:
 	NodeDefManager *m_nodedef;
 	ISoundManager *m_sound;
 	MtEventManager *m_event;
+	RenderingEngine *m_rendering_engine;
 
 
 	MeshUpdateThread m_mesh_update_thread;
@@ -530,9 +542,13 @@ private:
 	bool m_activeobjects_received = false;
 	bool m_mods_loaded = false;
 
+	std::vector<std::string> m_remote_media_servers;
+	// Media downloader, only exists during init
 	ClientMediaDownloader *m_media_downloader;
 	// Set of media filenames pushed by server at runtime
 	std::unordered_set<std::string> m_media_pushed_files;
+	// Pending downloads of dynamic media (key: token)
+	std::vector<std::pair<u32, std::unique_ptr<SingleMediaDownloader>>> m_pending_media_downloads;
 
 	// time_of_day speed approximation for old protocol
 	bool m_time_of_day_set = false;

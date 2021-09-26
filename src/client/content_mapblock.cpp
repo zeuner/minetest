@@ -60,18 +60,16 @@ static constexpr u16 quad_indices[] = {0, 1, 2, 2, 3, 0};
 
 const std::string MapblockMeshGenerator::raillike_groupname = "connect_to_raillike";
 
-MapblockMeshGenerator::MapblockMeshGenerator(MeshMakeData *input, MeshCollector *output)
+MapblockMeshGenerator::MapblockMeshGenerator(MeshMakeData *input, MeshCollector *output,
+	scene::IMeshManipulator *mm):
+	data(input),
+	collector(output),
+	nodedef(data->m_client->ndef()),
+	meshmanip(mm),
+	blockpos_nodes(data->m_blockpos * MAP_BLOCKSIZE)
 {
-	data      = input;
-	collector = output;
-
-	nodedef   = data->m_client->ndef();
-	meshmanip = RenderingEngine::get_scene_manager()->getMeshManipulator();
-
 	enable_mesh_cache = g_settings->getBool("enable_mesh_cache") &&
 		!data->m_smooth_lighting; // Mesh cache is not supported with smooth lighting
-
-	blockpos_nodes = data->m_blockpos * MAP_BLOCKSIZE;
 }
 
 void MapblockMeshGenerator::useTile(int index, u8 set_flags, u8 reset_flags, bool special)
@@ -960,10 +958,38 @@ void MapblockMeshGenerator::drawPlantlikeQuad(float rotation, float quad_offset,
 		vertex.rotateXZBy(rotation + rotate_degree);
 		vertex += offset;
 	}
+
+	u8 wall = n.getWallMounted(nodedef);
+	if (wall != DWM_YN) {
+		for (v3f &vertex : vertices) {
+			switch (wall) {
+				case DWM_YP:
+					vertex.rotateYZBy(180);
+					vertex.rotateXZBy(180);
+					break;
+				case DWM_XP:
+					vertex.rotateXYBy(90);
+					break;
+				case DWM_XN:
+					vertex.rotateXYBy(-90);
+					vertex.rotateYZBy(180);
+					break;
+				case DWM_ZP:
+					vertex.rotateYZBy(-90);
+					vertex.rotateXYBy(90);
+					break;
+				case DWM_ZN:
+					vertex.rotateYZBy(90);
+					vertex.rotateXYBy(90);
+					break;
+			}
+		}
+	}
+
 	drawQuad(vertices, v3s16(0, 0, 0), plant_height);
 }
 
-void MapblockMeshGenerator::drawPlantlike()
+void MapblockMeshGenerator::drawPlantlike(bool is_rooted)
 {
 	draw_style = PLANT_STYLE_CROSS;
 	scale = BS / 2 * f->visual_scale;
@@ -998,6 +1024,22 @@ void MapblockMeshGenerator::drawPlantlike()
 
 	default:
 		break;
+	}
+
+	if (is_rooted) {
+		u8 wall = n.getWallMounted(nodedef);
+		switch (wall) {
+			case DWM_YP:
+				offset.Y += BS*2;
+				break;
+			case DWM_XN:
+			case DWM_XP:
+			case DWM_ZN:
+			case DWM_ZP:
+				offset.X += -BS;
+				offset.Y +=  BS;
+				break;
+		}
 	}
 
 	switch (draw_style) {
@@ -1050,7 +1092,7 @@ void MapblockMeshGenerator::drawPlantlikeRootedNode()
 		MapNode ntop = data->m_vmanip.getNodeNoEx(blockpos_nodes + p);
 		light = LightPair(getInteriorLight(ntop, 1, nodedef));
 	}
-	drawPlantlike();
+	drawPlantlike(true);
 	p.Y--;
 }
 

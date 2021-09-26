@@ -65,6 +65,8 @@ void set_default_settings()
 	settings->setDefault("max_out_chat_queue_size", "20");
 	settings->setDefault("pause_on_lost_focus", "false");
 	settings->setDefault("enable_register_confirmation", "true");
+	settings->setDefault("clickable_chat_weblinks", "false");
+	settings->setDefault("chat_weblink_color", "#8888FF");
 
 	// Keymap
 	settings->setDefault("remote_port", "30000");
@@ -177,7 +179,6 @@ void set_default_settings()
 	settings->setDefault("screen_h", "600");
 	settings->setDefault("autosave_screensize", "true");
 	settings->setDefault("fullscreen", "false");
-	settings->setDefault("fullscreen_bpp", "24");
 	settings->setDefault("vsync", "false");
 	settings->setDefault("fov", "72");
 	settings->setDefault("leaves_style", "fancy");
@@ -262,6 +263,18 @@ void set_default_settings()
 	settings->setDefault("enable_waving_leaves", "false");
 	settings->setDefault("enable_waving_plants", "false");
 
+	// Effects Shadows
+	settings->setDefault("enable_dynamic_shadows", "false");
+	settings->setDefault("shadow_strength", "0.2");
+	settings->setDefault("shadow_map_max_distance", "200.0");
+	settings->setDefault("shadow_map_texture_size", "2048");
+	settings->setDefault("shadow_map_texture_32bit", "true");
+	settings->setDefault("shadow_map_color", "false");
+	settings->setDefault("shadow_filters", "1");
+	settings->setDefault("shadow_poisson_filter", "true");
+	settings->setDefault("shadow_update_frames", "8");
+	settings->setDefault("shadow_soft_radius", "1.0");
+	settings->setDefault("shadow_sky_body_orbit_tilt", "0.0");
 
 	// Input
 	settings->setDefault("invert_mouse", "false");
@@ -272,7 +285,7 @@ void set_default_settings()
 	settings->setDefault("aux1_descends", "false");
 	settings->setDefault("doubletap_jump", "false");
 	settings->setDefault("always_fly_fast", "true");
-#ifdef __ANDROID__
+#ifdef HAVE_TOUCHSCREENGUI
 	settings->setDefault("autojump", "true");
 #else
 	settings->setDefault("autojump", "false");
@@ -385,7 +398,7 @@ void set_default_settings()
 	settings->setDefault("chat_message_limit_per_10sec", "8.0");
 	settings->setDefault("chat_message_limit_trigger_kick", "50");
 	settings->setDefault("sqlite_synchronous", "2");
-	settings->setDefault("map_compression_level_disk", "3");
+	settings->setDefault("map_compression_level_disk", "-1");
 	settings->setDefault("map_compression_level_net", "-1");
 	settings->setDefault("full_block_send_enable_min_time_from_building", "2.0");
 	settings->setDefault("dedicated_server_step", "0.09");
@@ -442,9 +455,9 @@ void set_default_settings()
 	settings->setDefault("server_name", "");
 	settings->setDefault("server_description", "");
 
-	settings->setDefault("high_precision_fpu", "true");
 	settings->setDefault("enable_console", "false");
 	settings->setDefault("screen_dpi", "72");
+	settings->setDefault("display_density_factor", "1");
 
 	// Altered settings for macOS
 #if defined(__MACH__) && defined(__APPLE__)
@@ -452,15 +465,17 @@ void set_default_settings()
 	settings->setDefault("fps_max", "0");
 #endif
 
+#ifdef HAVE_TOUCHSCREENGUI
+	settings->setDefault("touchtarget", "true");
+	settings->setDefault("touchscreen_threshold","20");
+	settings->setDefault("fixed_virtual_joystick", "false");
+	settings->setDefault("virtual_joystick_triggers_aux1", "false");
+#endif
 	// Altered settings for Android
 #ifdef __ANDROID__
 	settings->setDefault("screen_w", "0");
 	settings->setDefault("screen_h", "0");
 	settings->setDefault("fullscreen", "true");
-	settings->setDefault("touchtarget", "true");
-	settings->setDefault("touchscreen_threshold","20");
-	settings->setDefault("fixed_virtual_joystick", "false");
-	settings->setDefault("virtual_joystick_triggers_aux1", "false");
 	settings->setDefault("smooth_lighting", "false");
 	settings->setDefault("max_simultaneous_block_sends_per_client", "10");
 	settings->setDefault("emergequeue_limit_diskonly", "16");
@@ -472,7 +487,7 @@ void set_default_settings()
 	settings->setDefault("max_objects_per_block", "20");
 	settings->setDefault("sqlite_synchronous", "1");
 	settings->setDefault("map_compression_level_disk", "-1");
-	settings->setDefault("map_compression_level_net", "3");
+	settings->setDefault("map_compression_level_net", "-1");
 	settings->setDefault("server_map_save_interval", "15");
 	settings->setDefault("client_mapblock_limit", "1000");
 	settings->setDefault("active_block_range", "2");

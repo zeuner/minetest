@@ -58,7 +58,8 @@ public:
 		bool show_chat = true;
 		bool show_hud = true;
 		bool show_minimap = false;
-		bool show_debug = true;
+		bool show_minimal_debug = false;
+		bool show_basic_debug = false;
 		bool show_profiler_graph = false;
 	};
 
@@ -88,6 +89,7 @@ public:
 		return m_flags.show_chat && m_recent_chat_count != 0 && m_profiler_current_page == 0;
 	}
 	void setChatText(const EnrichedString &chat_text, u32 recent_chat_count);
+	void updateChatSize();
 
 	void updateProfiler();
 
@@ -121,6 +123,7 @@ private:
 
 	gui::IGUIStaticText *m_guitext_chat = nullptr; // Chat text
 	u32 m_recent_chat_count = 0;
+	core::rect<s32> m_current_chat_size{0, 0, 0, 0};
 
 	gui::IGUIStaticText *m_guitext_profiler = nullptr; // Profiler text
 	u8 m_profiler_current_page = 0;

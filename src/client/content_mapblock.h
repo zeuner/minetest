@@ -146,7 +146,7 @@ public:
 
 	void drawPlantlikeQuad(float rotation, float quad_offset = 0,
 		bool offset_top_only = false);
-	void drawPlantlike();
+	void drawPlantlike(bool is_rooted = false);
 
 // firelike-specific
 	void drawFirelikeQuad(float rotation, float opening_angle,
@@ -172,7 +172,8 @@ public:
 	void drawNode();
 
 public:
-	MapblockMeshGenerator(MeshMakeData *input, MeshCollector *output);
+	MapblockMeshGenerator(MeshMakeData *input, MeshCollector *output,
+			scene::IMeshManipulator *mm);
 	void generate();
 	void renderSingle(content_t node, u8 param2 = 0x00);
 };

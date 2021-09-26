@@ -208,6 +208,19 @@ minetest.register_node("testnodes:plantlike_waving", {
 	groups = { dig_immediate = 3 },
 })
 
+minetest.register_node("testnodes:plantlike_wallmounted", {
+	description = S("Wallmounted Plantlike Drawtype Test Node"),
+	drawtype = "plantlike",
+	paramtype = "light",
+	paramtype2 = "wallmounted",
+	tiles = { "testnodes_plantlike_wallmounted.png" },
+	leveled = 1,
+
+
+	walkable = false,
+	sunlight_propagates = true,
+	groups = { dig_immediate = 3 },
+})
 
 
 -- param2 will rotate
@@ -254,11 +267,11 @@ minetest.register_node("testnodes:mesh_degrotate", {
 	drawtype = "mesh",
 	paramtype = "light",
 	paramtype2 = "degrotate",
-	mesh = "testnodes_pyramid.obj",
+	mesh = "testnodes_ocorner.obj",
 	tiles = { "testnodes_mesh_stripes2.png" },
 
 	on_rightclick = rotate_on_rightclick,
-	place_param2 = 7,
+	place_param2 = 10, -- 15°
 	sunlight_propagates = true,
 	groups = { dig_immediate = 3 },
 })
@@ -266,14 +279,15 @@ minetest.register_node("testnodes:mesh_degrotate", {
 minetest.register_node("testnodes:mesh_colordegrotate", {
 	description = S("Color Degrotate Mesh Drawtype Test Node"),
 	drawtype = "mesh",
+	paramtype = "light",
 	paramtype2 = "colordegrotate",
 	palette = "testnodes_palette_facedir.png",
-	mesh = "testnodes_pyramid.obj",
-	tiles = { "testnodes_mesh_stripes2.png" },
+	mesh = "testnodes_ocorner.obj",
+	tiles = { "testnodes_mesh_stripes3.png" },
 
 	on_rightclick = rotate_on_rightclick,
-	-- color index 1, 7 steps rotated
-	place_param2 = 1 * 2^5 + 7,
+	-- color index 1, 1 step (=15°) rotated
+	place_param2 = 1 * 2^5 + 1,
 	sunlight_propagates = true,
 	groups = { dig_immediate = 3 },
 })
@@ -315,6 +329,20 @@ minetest.register_node("testnodes:plantlike_rooted", {
 	paramtype = "light",
 	tiles = { "testnodes_plantlike_rooted_base.png" },
 	special_tiles = { "testnodes_plantlike_rooted.png" },
+
+	groups = { dig_immediate = 3 },
+})
+
+minetest.register_node("testnodes:plantlike_rooted_wallmounted", {
+	description = S("Wallmounted Rooted Plantlike Drawtype Test Node"),
+	drawtype = "plantlike_rooted",
+	paramtype = "light",
+	paramtype2 = "wallmounted",
+	tiles = {
+		"testnodes_plantlike_rooted_base.png",
+		"testnodes_plantlike_rooted_base.png",
+		"testnodes_plantlike_rooted_base_side_wallmounted.png" },
+	special_tiles = { "testnodes_plantlike_rooted_wallmounted.png" },
 
 	groups = { dig_immediate = 3 },
 })
@@ -587,6 +615,9 @@ scale("allfaces_optional_waving",
 scale("plantlike",
 	S("Double-sized Plantlike Drawtype Test Node"),
 	S("Half-sized Plantlike Drawtype Test Node"))
+scale("plantlike_wallmounted",
+	S("Double-sized Wallmounted Plantlike Drawtype Test Node"),
+	S("Half-sized Wallmounted Plantlike Drawtype Test Node"))
 scale("torchlike_wallmounted",
 	S("Double-sized Wallmounted Torchlike Drawtype Test Node"),
 	S("Half-sized Wallmounted Torchlike Drawtype Test Node"))

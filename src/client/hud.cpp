@@ -20,6 +20,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 */
 
 #include "client/hud.h"
+#include <string>
+#include <iostream>
 #include <cmath>
 #include "settings.h"
 #include "util/numeric.h"
@@ -45,11 +47,10 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define OBJECT_CROSSHAIR_LINE_SIZE 8
 #define CROSSHAIR_LINE_SIZE 10
 
-Hud::Hud(gui::IGUIEnvironment *guienv, Client *client, LocalPlayer *player,
+Hud::Hud(Client *client, LocalPlayer *player,
 		Inventory *inventory)
 {
 	driver            = RenderingEngine::get_video_driver();
-	this->guienv      = guienv;
 	this->client      = client;
 	this->player      = player;
 	this->inventory   = inventory;
@@ -315,7 +316,7 @@ bool Hud::calculateScreenPos(const v3s16 &camera_offset, HudElement *e, v2s32 *p
 {
 	v3f w_pos = e->world_pos * BS;
 	scene::ICameraSceneNode* camera =
-		RenderingEngine::get_scene_manager()->getActiveCamera();
+		client->getSceneManager()->getActiveCamera();
 	w_pos -= intToFloat(camera_offset, BS);
 	core::matrix4 trans = camera->getProjectionMatrix();
 	trans *= camera->getViewMatrix();
@@ -332,8 +333,8 @@ bool Hud::calculateScreenPos(const v3s16 &camera_offset, HudElement *e, v2s32 *p
 
 void Hud::drawLuaElements(const v3s16 &camera_offset)
 {
-	u32 text_height = g_fontengine->getTextHeight();
-	irr::gui::IGUIFont* font = g_fontengine->getFont();
+	const u32 text_height = g_fontengine->getTextHeight();
+	gui::IGUIFont *const font = g_fontengine->getFont();
 
 	// Reorder elements by z_index
 	std::vector<HudElement*> elems;
@@ -357,40 +358,40 @@ void Hud::drawLuaElements(const v3s16 &camera_offset)
 				floor(e->pos.Y * (float) m_screensize.Y + 0.5));
 		switch (e->type) {
 			case HUD_ELEM_TEXT: {
-				irr::gui::IGUIFont *textfont = font;
 				unsigned int font_size = g_fontengine->getDefaultFontSize();
 
 				if (e->size.X > 0)
 					font_size *= e->size.X;
 
-				if (font_size != g_fontengine->getDefaultFontSize())
-					textfont = g_fontengine->getFont(font_size);
+#ifdef __ANDROID__
+				// The text size on Android is not proportional with the actual scaling
+				// FIXME: why do we have such a weird unportable hack??
+				if (font_size > 3 && e->offset.X < -20)
+					font_size -= 3;
+#endif
+				auto textfont = g_fontengine->getFont(FontSpec(font_size,
+					(e->style & HUD_STYLE_MONO) ? FM_Mono : FM_Unspecified,
+					e->style & HUD_STYLE_BOLD, e->style & HUD_STYLE_ITALIC));
 
 				video::SColor color(255, (e->number >> 16) & 0xFF,
 										 (e->number >> 8)  & 0xFF,
 										 (e->number >> 0)  & 0xFF);
 				std::wstring text = unescape_translate(utf8_to_wide(e->text));
 				core::dimension2d<u32> textsize = textfont->getDimension(text.c_str());
-#ifdef __ANDROID__
-				// The text size on Android is not proportional with the actual scaling
-				irr::gui::IGUIFont *font_scaled = font_size <= 3 ?
-					textfont : g_fontengine->getFont(font_size - 3);
-				if (e->offset.X < -20)
-					textsize = font_scaled->getDimension(text.c_str());
-#endif
-				v2s32 offset((e->align.X - 1.0) * (textsize.Width / 2),
-				             (e->align.Y - 1.0) * (textsize.Height / 2));
+
+				v2s32 offset(0, (e->align.Y - 1.0) * (textsize.Height / 2));
 				core::rect<s32> size(0, 0, e->scale.X * m_scale_factor,
-				                     text_height * e->scale.Y * m_scale_factor);
+						text_height * e->scale.Y * m_scale_factor);
 				v2s32 offs(e->offset.X * m_scale_factor,
-				           e->offset.Y * m_scale_factor);
-#ifdef __ANDROID__
-				if (e->offset.X < -20)
-					font_scaled->draw(text.c_str(), size + pos + offset + offs, color);
-				else
-#endif
+						e->offset.Y * m_scale_factor);
+				std::wstringstream wss(text);
+				std::wstring line;
+				while (std::getline(wss, line, L'\n'))
 				{
-					textfont->draw(text.c_str(), size + pos + offset + offs, color);
+					core::dimension2d<u32> linesize = textfont->getDimension(line.c_str());
+					v2s32 line_offset((e->align.X - 1.0) * (linesize.Width / 2), 0);
+					textfont->draw(line.c_str(), size + pos + offset + offs + line_offset, color);
+					offset.Y += linesize.Height;
 				}
 				break; }
 			case HUD_ELEM_STATBAR: {
@@ -475,7 +476,7 @@ void Hud::drawLuaElements(const v3s16 &camera_offset)
 
 				// Angle according to camera view
 				v3f fore(0.f, 0.f, 1.f);
-				scene::ICameraSceneNode *cam = RenderingEngine::get_scene_manager()->getActiveCamera();
+				scene::ICameraSceneNode *cam = client->getSceneManager()->getActiveCamera();
 				cam->getAbsoluteTransformation().rotateVect(fore);
 				int angle = - fore.getHorizontalAngle().Y;
 
@@ -747,7 +748,7 @@ void Hud::drawHotbar(u16 playeritem) {
 	s32 width = hotbar_itemcount * (m_hotbar_imagesize + m_padding * 2);
 	v2s32 pos = centerlowerpos - v2s32(width / 2, m_hotbar_imagesize + m_padding * 3);
 
-	const v2u32 &window_size = RenderingEngine::get_instance()->getWindowSize();
+	const v2u32 &window_size = RenderingEngine::getWindowSize();
 	if ((float) width / (float) window_size.X <=
 			g_settings->getFloat("hud_hotbar_max_width")) {
 		if (player->hud_flags & HUD_FLAG_HOTBAR_VISIBLE) {
@@ -862,19 +863,25 @@ void Hud::drawSelectionMesh()
 	}
 }
 
-void Hud::toggleBlockBounds()
+enum Hud::BlockBoundsMode Hud::toggleBlockBounds()
 {
 	m_block_bounds_mode = static_cast<BlockBoundsMode>(m_block_bounds_mode + 1);
 
 	if (m_block_bounds_mode >= BLOCK_BOUNDS_MAX) {
 		m_block_bounds_mode = BLOCK_BOUNDS_OFF;
 	}
+	return m_block_bounds_mode;
+}
+
+void Hud::disableBlockBounds()
+{
+	m_block_bounds_mode = BLOCK_BOUNDS_OFF;
 }
 
 void Hud::drawBlockBounds()
 {
 	if (m_block_bounds_mode == BLOCK_BOUNDS_OFF) {
-		return;	
+		return;
 	}
 
 	video::SMaterial old_material = driver->getMaterial2D();
@@ -890,7 +897,7 @@ void Hud::drawBlockBounds()
 
 	v3f offset = intToFloat(client->getCamera()->getOffset(), BS);
 
-	s8 radius = m_block_bounds_mode == BLOCK_BOUNDS_ALL ? 2 : 0;
+	s8 radius = m_block_bounds_mode == BLOCK_BOUNDS_NEAR ? 2 : 0;
 
 	v3f halfNode = v3f(BS, BS, BS) / 2.0f;
 
@@ -956,7 +963,7 @@ void Hud::updateSelectionMesh(const v3s16 &camera_offset)
 }
 
 void Hud::resizeHotbar() {
-	const v2u32 &window_size = RenderingEngine::get_instance()->getWindowSize();
+	const v2u32 &window_size = RenderingEngine::getWindowSize();
 
 	if (m_screensize != window_size) {
 		m_hotbar_imagesize = floor(HOTBAR_IMAGE_SIZE *
@@ -997,6 +1004,8 @@ void drawItemStack(
 		g_settings->getBool("inventory_items_animations");
 
 	const ItemDefinition &def = item.getDefinition(client->idef());
+
+	bool draw_overlay = false;
 
 	// Render as mesh if animated or no inventory image
 	if ((enable_animations && rotation_kind < IT_ROT_NONE) || def.inventory_image.empty()) {
@@ -1090,6 +1099,8 @@ void drawItemStack(
 		driver->setTransform(video::ETS_VIEW, oldViewMat);
 		driver->setTransform(video::ETS_PROJECTION, oldProjMat);
 		driver->setViewPort(oldViewPort);
+
+		draw_overlay = def.type == ITEM_NODE && def.inventory_image.empty();
 	} else { // Otherwise just draw as 2D
 		video::ITexture *texture = client->idef()->getInventoryTexture(def.name, client);
 		if (!texture)
@@ -1101,11 +1112,12 @@ void drawItemStack(
 		draw2DImageFilterScaled(driver, texture, rect,
 			core::rect<s32>({0, 0}, core::dimension2di(texture->getOriginalSize())),
 			clip, colors, true);
+
+		draw_overlay = true;
 	}
 
 	// draw the inventory_overlay
-	if (def.type == ITEM_NODE && def.inventory_image.empty() &&
-			!def.inventory_overlay.empty()) {
+	if (!def.inventory_overlay.empty() && draw_overlay) {
 		ITextureSource *tsrc = client->getTextureSource();
 		video::ITexture *overlay_texture = tsrc->getTexture(def.inventory_overlay);
 		core::dimension2d<u32> dimens = overlay_texture->getOriginalSize();

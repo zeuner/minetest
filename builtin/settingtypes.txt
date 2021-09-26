@@ -152,11 +152,11 @@ joystick_type (Joystick type) enum auto auto,generic,xbox
 #    when holding down a joystick button combination.
 repeat_joystick_button_time (Joystick button repetition interval) float 0.17 0.001
 
-#    The deadzone of the joystick
-joystick_deadzone (Joystick deadzone) int 2048
+#    The dead zone of the joystick
+joystick_deadzone (Joystick dead zone) int 2048
 
 #    The sensitivity of the joystick axes for moving the
-#    ingame view frustum around.
+#    in-game view frustum around.
 joystick_frustum_sensitivity (Joystick frustum sensitivity) float 170
 
 #    Key for moving the player forward.
@@ -451,9 +451,9 @@ keymap_decrease_viewing_range_min (View range decrease key) key -
 
 [**Basic]
 
-#    Whether nametag backgrounds should be shown by default.
+#    Whether name tag backgrounds should be shown by default.
 #    Mods may still set a background.
-show_nametag_backgrounds (Show nametag backgrounds by default) bool true
+show_nametag_backgrounds (Show name tag backgrounds by default) bool true
 
 #    Enable vertex buffer objects.
 #    This should greatly improve graphics performance.
@@ -489,7 +489,7 @@ enable_particles (Digging particles) bool true
 
 [**Filtering]
 
-#    Use mip mapping to scale textures. May slightly increase performance,
+#    Use mipmapping to scale textures. May slightly increase performance,
 #    especially when using a high resolution texture pack.
 #    Gamma correct downscaling is not supported.
 mip_map (Mipmapping) bool false
@@ -513,7 +513,7 @@ texture_clean_transparent (Clean transparent textures) bool false
 #    can be blurred, so automatically upscale them with nearest-neighbor
 #    interpolation to preserve crisp pixels. This sets the minimum texture size
 #    for the upscaled textures; higher values look sharper, but require more
-#    memory.  Powers of 2 are recommended. This setting is ONLY applies if
+#    memory. Powers of 2 are recommended. This setting is ONLY applied if
 #    bilinear/trilinear/anisotropic filtering is enabled.
 #    This is also used as the base node texture size for world-aligned
 #    texture autoscaling.
@@ -582,6 +582,58 @@ enable_waving_leaves (Waving leaves) bool false
 #    Requires shaders to be enabled.
 enable_waving_plants (Waving plants) bool false
 
+[***Dynamic shadows]
+
+#    Set to true to enable Shadow Mapping.
+#    Requires shaders to be enabled.
+enable_dynamic_shadows (Dynamic shadows) bool false
+
+#    Set the shadow strength.
+#    Lower value means lighter shadows, higher value means darker shadows.
+shadow_strength (Shadow strength) float 0.2 0.05 1.0
+
+#    Maximum distance to render shadows.
+shadow_map_max_distance (Shadow map max distance in nodes to render shadows) float 120.0 10.0 1000.0
+
+#    Texture size to render the shadow map on.
+#    This must be a power of two.
+#    Bigger numbers create better shadows but it is also more expensive.
+shadow_map_texture_size (Shadow map texture size) int 1024 128 8192
+
+#    Sets shadow texture quality to 32 bits.
+#    On false, 16 bits texture will be used.
+#    This can cause much more artifacts in the shadow.
+shadow_map_texture_32bit (Shadow map texture in 32 bits) bool true
+
+#    Enable Poisson disk filtering.
+#    On true uses Poisson disk to make "soft shadows". Otherwise uses PCF filtering.
+shadow_poisson_filter (Poisson filtering) bool true
+
+#   Define shadow filtering quality.
+#   This simulates the soft shadows effect by applying a PCF or Poisson disk
+#   but also uses more resources.
+shadow_filters (Shadow filter quality) enum 1 0,1,2
+
+#    Enable colored shadows. 
+#    On true translucent nodes cast colored shadows. This is expensive.
+shadow_map_color (Colored shadows) bool false
+
+#    Spread a complete update of shadow map over given amount of frames.
+#    Higher values might make shadows laggy, lower values
+#    will consume more resources.
+#    Minimum value: 1; maximum value: 16
+shadow_update_frames (Map shadows update frames) int 8 1 16
+
+#    Set the soft shadow radius size.
+#    Lower values mean sharper shadows, bigger values mean softer shadows.
+#    Minimum value: 1.0; maximum value: 10.0
+shadow_soft_radius (Soft shadow radius) float 1.0 1.0 10.0
+
+#    Set the tilt of Sun/Moon orbit in degrees.
+#    Value of 0 means no tilt / vertical orbit.
+#    Minimum value: 0.0; maximum value: 60.0
+shadow_sky_body_orbit_tilt (Sky Body Orbit Tilt) float 0.0 0.0 60.0
+
 [**Advanced]
 
 #    Arm inertia, gives a more realistic movement of
@@ -608,10 +660,10 @@ viewing_range (Viewing range) int 190 20 4000
 #   0.1 = Default, 0.25 = Good value for weaker tablets.
 near_plane (Near plane) float 0.1 0 0.25
 
-#    Width component of the initial window size.
+#    Width component of the initial window size. Ignored in fullscreen mode.
 screen_w (Screen width) int 1024 1
 
-#    Height component of the initial window size.
+#    Height component of the initial window size. Ignored in fullscreen mode.
 screen_h (Screen height) int 600 1
 
 #    Save window size automatically when modified.
@@ -619,9 +671,6 @@ autosave_screensize (Autosave screen size) bool true
 
 #    Fullscreen mode.
 fullscreen (Full screen) bool false
-
-#    Bits per pixel (aka color depth) in fullscreen mode.
-fullscreen_bpp (Full screen BPP) int 24
 
 #    Vertical screen synchronization.
 vsync (VSync) bool false
@@ -661,12 +710,12 @@ lighting_boost_spread (Light curve boost spread) float 0.2 0.0 0.4
 #    Path to texture directory. All textures are first searched from here.
 texture_path (Texture path) path
 
-#    The rendering back-end for Irrlicht.
+#    The rendering back-end.
 #    A restart is required after changing this.
 #    Note: On Android, stick with OGLES1 if unsure! App may fail to start otherwise.
 #    On other platforms, OpenGL is recommended.
 #    Shaders are supported by OpenGL (desktop only) and OGLES2 (experimental)
-video_driver (Video driver) enum opengl null,software,burningsvideo,direct3d8,direct3d9,opengl,ogles1,ogles2
+video_driver (Video driver) enum opengl opengl,ogles1,ogles2
 
 #    Radius of cloud area stated in number of 64 node cloud squares.
 #    Values larger than 26 will start to produce sharp cutoffs at cloud area corners.
@@ -727,7 +776,7 @@ selectionbox_width (Selection box width) int 2 1 5
 crosshair_color (Crosshair color) string (255,255,255)
 
 #    Crosshair alpha (opaqueness, between 0 and 255).
-#    Also controls the object crosshair color
+#    This also applies to the object crosshair.
 crosshair_alpha (Crosshair alpha) int 255 0 255
 
 #    Maximum number of recent chat messages to show
@@ -740,7 +789,7 @@ desynchronize_mapblock_texture_animation (Desynchronize block animation) bool tr
 #    Useful if there's something to be displayed right or left of hotbar.
 hud_hotbar_max_width (Maximum hotbar width) float 1.0
 
-#    Modifies the size of the hudbar elements.
+#    Modifies the size of the HUD elements.
 hud_scaling (HUD scale factor) float 1.0
 
 #    Enables caching of facedir rotated meshes.
@@ -900,6 +949,9 @@ screenshot_quality (Screenshot quality) int 0 0 100
 #    Adjust dpi configuration to your screen (non X11/Android only) e.g. for 4k screens.
 screen_dpi (DPI) int 72 1
 
+#    Adjust the detected display density, used for scaling UI elements.
+display_density_factor (Display Density Scaling Factor) float 1
+
 #    Windows systems only: Start Minetest with the command line window in the background.
 #    Contains the same information as the file debug.txt (default name).
 enable_console (Enable console window) bool false
@@ -924,6 +976,12 @@ mute_sound (Mute sound) bool false
 
 [Client]
 
+#    Clickable weblinks (middle-click or Ctrl+left-click) enabled in chat console output.
+clickable_chat_weblinks (Chat weblinks) bool false
+
+#    Optional override for chat weblink color.
+chat_weblink_color (Weblink color) string
+
 [*Network]
 
 #    Address to connect to.
@@ -936,9 +994,9 @@ address (Server address) string
 remote_port (Remote port) int 30000 1 65535
 
 #    Prometheus listener address.
-#    If minetest is compiled with ENABLE_PROMETHEUS option enabled,
+#    If Minetest is compiled with ENABLE_PROMETHEUS option enabled,
 #    enable metrics listener for Prometheus on that address.
-#    Metrics can be fetch on http://127.0.0.1:30000/metrics
+#    Metrics can be fetched on http://127.0.0.1:30000/metrics
 prometheus_listener_address (Prometheus listener address) string 127.0.0.1:30000
 
 #    Save the map received by the client on disk.
@@ -1045,11 +1103,10 @@ full_block_send_enable_min_time_from_building (Delay in sending blocks after bui
 #    client number.
 max_packets_per_iteration (Max. packets per iteration) int 1024
 
-#    ZLib compression level to use when sending mapblocks to the client.
-#    -1 - Zlib's default compression level
-#     0 - no compresson, fastest
+#    Compression level to use when sending mapblocks to the client.
+#    -1 - use default compression level
+#     0 - least compression, fastest
 #     9 - best compression, slowest
-#     (levels 1-3 use Zlib's "fast" method, 4-9 use the normal method)
 map_compression_level_net (Map Compression Level for Network Transfer) int -1 -1 9
 
 [*Game]
@@ -1234,7 +1291,7 @@ movement_gravity (Gravity) float 9.81
 deprecated_lua_api_handling (Deprecated Lua API handling) enum log none,log,error
 
 #    Number of extra blocks that can be loaded by /clearobjects at once.
-#    This is a trade-off between sqlite transaction overhead and
+#    This is a trade-off between SQLite transaction overhead and
 #    memory consumption (4096=100MB, as a rule of thumb).
 max_clearobjects_extra_loaded_blocks (Max. clearobjects extra blocks) int 4096
 
@@ -1248,12 +1305,11 @@ max_objects_per_block (Maximum objects per block) int 64
 #    See https://www.sqlite.org/pragma.html#pragma_synchronous
 sqlite_synchronous (Synchronous SQLite) enum 2 0,1,2
 
-#    ZLib compression level to use when saving mapblocks to disk.
-#    -1 - Zlib's default compression level
-#     0 - no compresson, fastest
+#    Compression level to use when saving mapblocks to disk.
+#    -1 - use default compression level
+#     0 - least compression, fastest
 #     9 - best compression, slowest
-#     (levels 1-3 use Zlib's "fast" method, 4-9 use the normal method)
-map_compression_level_disk (Map Compression Level for Disk Storage) int 3 -1 9
+map_compression_level_disk (Map Compression Level for Disk Storage) int -1 -1 9
 
 #    Length of a server tick and the interval at which objects are generally updated over
 #    network.
@@ -1358,8 +1414,8 @@ instrument.abm (Active Block Modifiers) bool true
 #    Instrument the action function of Loading Block Modifiers on registration.
 instrument.lbm (Loading Block Modifiers) bool true
 
-#    Instrument chatcommands on registration.
-instrument.chatcommand (Chatcommands) bool true
+#    Instrument chat commands on registration.
+instrument.chatcommand (Chat commands) bool true
 
 #    Instrument global callback functions on registration.
 #    (anything you pass to a minetest.register_*() function)
@@ -1425,9 +1481,6 @@ curl_parallel_limit (cURL parallel limit) int 8
 #    Maximum time a file download (e.g. a mod download) may take, stated in milliseconds.
 curl_file_download_timeout (cURL file download timeout) int 300000
 
-#    Makes DirectX work with LuaJIT. Disable if it causes troubles.
-high_precision_fpu (High-precision FPU) bool true
-
 #    Replaces the default main menu with a custom one.
 main_menu_script (Main menu script) string
 
@@ -1456,7 +1509,7 @@ mapgen_limit (Map generation limit) int 31000 0 31000
 
 #    Global map generation attributes.
 #    In Mapgen v6 the 'decorations' flag controls all decorations except trees
-#    and junglegrass, in all other mapgens this flag controls all decorations.
+#    and jungle grass, in all other mapgens this flag controls all decorations.
 mg_flags (Mapgen flags) flags caves,dungeons,light,decorations,biomes,ores caves,dungeons,light,decorations,biomes,ores,nocaves,nodungeons,nolight,nodecorations,nobiomes,noores
 
 [*Biome API temperature and humidity noise parameters]
@@ -2166,15 +2219,15 @@ chunksize (Chunk size) int 5
 enable_mapgen_debug_info (Mapgen debug) bool false
 
 #    Maximum number of blocks that can be queued for loading.
-emergequeue_limit_total (Absolute limit of queued blocks to emerge) int 1024
+emergequeue_limit_total (Absolute limit of queued blocks to emerge) int 1024 1 1000000
 
 #    Maximum number of blocks to be queued that are to be loaded from file.
 #    This limit is enforced per player.
-emergequeue_limit_diskonly (Per-player limit of queued blocks load from disk) int 128
+emergequeue_limit_diskonly (Per-player limit of queued blocks load from disk) int 128 1 1000000
 
 #    Maximum number of blocks to be queued that are to be generated.
 #    This limit is enforced per player.
-emergequeue_limit_generate (Per-player limit of queued blocks to generate) int 128
+emergequeue_limit_generate (Per-player limit of queued blocks to generate) int 128 1 1000000
 
 #    Number of emerge threads to use.
 #    Value 0:

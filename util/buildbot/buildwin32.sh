@@ -16,7 +16,6 @@ fi
 builddir=$1
 mkdir -p $builddir
 builddir="$( cd "$builddir" && pwd )"
-packagedir=$builddir/packages
 libdir=$builddir/libs
 
 # Test which win32 compiler is present
@@ -31,59 +30,53 @@ if [ -z "$toolchain_file" ]; then
 fi
 echo "Using $toolchain_file"
 
-irrlicht_version=1.9.0mt1
-ogg_version=1.3.2
-vorbis_version=1.3.5
-curl_version=7.65.3
+irrlicht_version=1.9.0mt3
+ogg_version=1.3.4
+vorbis_version=1.3.7
+curl_version=7.76.1
 gettext_version=0.20.1
-freetype_version=2.10.1
-sqlite3_version=3.27.2
+freetype_version=2.10.4
+sqlite3_version=3.35.5
 luajit_version=2.1.0-beta3
-leveldb_version=1.22
+leveldb_version=1.23
 zlib_version=1.2.11
+zstd_version=1.4.9
 
-mkdir -p $packagedir
 mkdir -p $libdir
 
-cd $builddir
+download () {
+	local url=$1
+	local filename=$2
+	[ -z "$filename" ] && filename=${url##*/}
+	local foldername=${filename%%[.-]*}
+	local extract=$3
+	[ -z "$extract" ] && extract=unzip
+
+	[ -d "./$foldername" ] && return 0
+	wget "$url" -c -O "./$filename"
+	if [ "$extract" = "unzip" ]; then
+		unzip -o "$filename" -d "$foldername"
+	elif [ "$extract" = "unzip_nofolder" ]; then
+		unzip -o "$filename"
+	else
+		return 1
+	fi
+}
 
 # Get stuff
-[ -e $packagedir/irrlicht-$irrlicht_version.zip ] || wget https://github.com/minetest/irrlicht/releases/download/$irrlicht_version/win32.zip \
-	-c -O $packagedir/irrlicht-$irrlicht_version.zip
-[ -e $packagedir/zlib-$zlib_version.zip ] || wget http://minetest.kitsunemimi.pw/zlib-$zlib_version-win32.zip \
-	-c -O $packagedir/zlib-$zlib_version.zip
-[ -e $packagedir/libogg-$ogg_version.zip ] || wget http://minetest.kitsunemimi.pw/libogg-$ogg_version-win32.zip \
-	-c -O $packagedir/libogg-$ogg_version.zip
-[ -e $packagedir/libvorbis-$vorbis_version.zip ] || wget http://minetest.kitsunemimi.pw/libvorbis-$vorbis_version-win32.zip \
-	-c -O $packagedir/libvorbis-$vorbis_version.zip
-[ -e $packagedir/curl-$curl_version.zip ] || wget http://minetest.kitsunemimi.pw/curl-$curl_version-win32.zip \
-	-c -O $packagedir/curl-$curl_version.zip
-[ -e $packagedir/gettext-$gettext_version.zip ] || wget http://minetest.kitsunemimi.pw/gettext-$gettext_version-win32.zip \
-	-c -O $packagedir/gettext-$gettext_version.zip
-[ -e $packagedir/freetype2-$freetype_version.zip ] || wget http://minetest.kitsunemimi.pw/freetype2-$freetype_version-win32.zip \
-	-c -O $packagedir/freetype2-$freetype_version.zip
-[ -e $packagedir/sqlite3-$sqlite3_version.zip ] || wget http://minetest.kitsunemimi.pw/sqlite3-$sqlite3_version-win32.zip \
-	-c -O $packagedir/sqlite3-$sqlite3_version.zip
-[ -e $packagedir/luajit-$luajit_version.zip ] || wget http://minetest.kitsunemimi.pw/luajit-$luajit_version-win32.zip \
-	-c -O $packagedir/luajit-$luajit_version.zip
-[ -e $packagedir/libleveldb-$leveldb_version.zip ] || wget http://minetest.kitsunemimi.pw/libleveldb-$leveldb_version-win32.zip \
-	-c -O $packagedir/libleveldb-$leveldb_version.zip
-[ -e $packagedir/openal_stripped.zip ] || wget http://minetest.kitsunemimi.pw/openal_stripped.zip \
-	-c -O $packagedir/openal_stripped.zip
-
-# Extract stuff
 cd $libdir
-[ -d irrlicht ] || unzip -o $packagedir/irrlicht-$irrlicht_version.zip -d irrlicht
-[ -d zlib ] || unzip -o $packagedir/zlib-$zlib_version.zip -d zlib
-[ -d libogg ] || unzip -o $packagedir/libogg-$ogg_version.zip -d libogg
-[ -d libvorbis ] || unzip -o $packagedir/libvorbis-$vorbis_version.zip -d libvorbis
-[ -d libcurl ] || unzip -o $packagedir/curl-$curl_version.zip -d libcurl
-[ -d gettext ] || unzip -o $packagedir/gettext-$gettext_version.zip -d gettext
-[ -d freetype ] || unzip -o $packagedir/freetype2-$freetype_version.zip -d freetype
-[ -d sqlite3 ] || unzip -o $packagedir/sqlite3-$sqlite3_version.zip -d sqlite3
-[ -d openal_stripped ] || unzip -o $packagedir/openal_stripped.zip
-[ -d luajit ] || unzip -o $packagedir/luajit-$luajit_version.zip -d luajit
-[ -d leveldb ] || unzip -o $packagedir/libleveldb-$leveldb_version.zip -d leveldb
+download "https://github.com/minetest/irrlicht/releases/download/$irrlicht_version/win32.zip" irrlicht-$irrlicht_version.zip
+download "http://minetest.kitsunemimi.pw/zlib-$zlib_version-win32.zip"
+download "http://minetest.kitsunemimi.pw/zstd-$zstd_version-win32.zip"
+download "http://minetest.kitsunemimi.pw/libogg-$ogg_version-win32.zip"
+download "http://minetest.kitsunemimi.pw/libvorbis-$vorbis_version-win32.zip"
+download "http://minetest.kitsunemimi.pw/curl-$curl_version-win32.zip"
+download "http://minetest.kitsunemimi.pw/gettext-$gettext_version-win32.zip"
+download "http://minetest.kitsunemimi.pw/freetype2-$freetype_version-win32.zip" freetype-$freetype_version.zip
+download "http://minetest.kitsunemimi.pw/sqlite3-$sqlite3_version-win32.zip"
+download "http://minetest.kitsunemimi.pw/luajit-$luajit_version-win32.zip"
+download "http://minetest.kitsunemimi.pw/libleveldb-$leveldb_version-win32.zip" leveldb-$leveldb_version.zip
+download "http://minetest.kitsunemimi.pw/openal_stripped.zip" '' unzip_nofolder
 
 # Set source dir, downloading Minetest as needed
 if [ -n "$EXISTING_MINETEST_DIR" ]; then
@@ -106,7 +99,7 @@ cd $builddir
 mkdir build
 cd build
 
-irr_dlls=$(echo $libdir/irrlicht/bin/*.dll | tr ' ' ';')
+irr_dlls=$(echo $libdir/irrlicht/lib/*.dll | tr ' ' ';')
 vorbis_dlls=$(echo $libdir/libvorbis/bin/libvorbis{,file}-*.dll | tr ' ' ';')
 gettext_dlls=$(echo $libdir/gettext/bin/lib{intl,iconv}-*.dll | tr ' ' ';')
 
@@ -122,13 +115,16 @@ cmake -S $sourcedir -B . \
 	-DENABLE_FREETYPE=1 \
 	-DENABLE_LEVELDB=1 \
 	\
-	-DIRRLICHT_INCLUDE_DIR=$libdir/irrlicht/include/irrlichtmt \
-	-DIRRLICHT_LIBRARY=$libdir/irrlicht/lib/libIrrlichtMt.dll.a \
+	-DCMAKE_PREFIX_PATH=$libdir/irrlicht \
 	-DIRRLICHT_DLL="$irr_dlls" \
 	\
 	-DZLIB_INCLUDE_DIR=$libdir/zlib/include \
-	-DZLIB_LIBRARIES=$libdir/zlib/lib/libz.dll.a \
+	-DZLIB_LIBRARY=$libdir/zlib/lib/libz.dll.a \
 	-DZLIB_DLL=$libdir/zlib/bin/zlib1.dll \
+	\
+	-DZSTD_INCLUDE_DIR=$libdir/zstd/include \
+	-DZSTD_LIBRARY=$libdir/zstd/lib/libzstd.dll.a \
+	-DZSTD_DLL=$libdir/zstd/bin/libzstd.dll \
 	\
 	-DLUA_INCLUDE_DIR=$libdir/luajit/include \
 	-DLUA_LIBRARY=$libdir/luajit/libluajit.a \
@@ -146,9 +142,9 @@ cmake -S $sourcedir -B . \
 	-DOPENAL_LIBRARY=$libdir/openal_stripped/lib/libOpenAL32.dll.a \
 	-DOPENAL_DLL=$libdir/openal_stripped/bin/OpenAL32.dll \
 	\
-	-DCURL_DLL=$libdir/libcurl/bin/libcurl-4.dll \
-	-DCURL_INCLUDE_DIR=$libdir/libcurl/include \
-	-DCURL_LIBRARY=$libdir/libcurl/lib/libcurl.dll.a \
+	-DCURL_DLL=$libdir/curl/bin/libcurl-4.dll \
+	-DCURL_INCLUDE_DIR=$libdir/curl/include \
+	-DCURL_LIBRARY=$libdir/curl/lib/libcurl.dll.a \
 	\
 	-DGETTEXT_MSGFMT=`which msgfmt` \
 	-DGETTEXT_DLL="$gettext_dlls" \

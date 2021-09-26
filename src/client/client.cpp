@@ -97,6 +97,7 @@ Client::Client(
 		NodeDefManager *nodedef,
 		ISoundManager *sound,
 		MtEventManager *event,
+		RenderingEngine *rendering_engine,
 		bool ipv6,
 		GameUI *game_ui
 ):
@@ -106,9 +107,10 @@ Client::Client(
 	m_nodedef(nodedef),
 	m_sound(sound),
 	m_event(event),
+	m_rendering_engine(rendering_engine),
 	m_mesh_update_thread(this),
 	m_env(
-		new ClientMap(this, control, 666),
+		new ClientMap(this, rendering_engine, control, 666),
 		tsrc, this
 	),
 	m_particle_manager(&m_env),
@@ -175,11 +177,7 @@ void Client::loadMods()
 
 	// Load "mod" scripts
 	for (const ModSpec &mod : m_mods) {
-		if (!string_allowed(mod.name, MODNAME_ALLOWED_CHARS)) {
-			throw ModError("Error loading mod \"" + mod.name +
-				"\": Mod name does not follow naming conventions: "
-					"Only characters [a-z0-9_] are allowed.");
-		}
+		mod.checkAndLog();
 		scanModIntoMemory(mod.name, mod.path);
 	}
 
@@ -208,6 +206,9 @@ void Client::scanModSubfolder(const std::string &mod_name, const std::string &mo
 	std::string full_path = mod_path + DIR_DELIM + mod_subpath;
 	std::vector<fs::DirListNode> mod = fs::GetDirListing(full_path);
 	for (const fs::DirListNode &j : mod) {
+		if (j.name[0] == '.')
+			continue;
+
 		if (j.dir) {
 			scanModSubfolder(mod_name, mod_path, mod_subpath + j.name + DIR_DELIM);
 			continue;
@@ -298,12 +299,7 @@ Client::~Client()
 	}
 
 	// cleanup 3d model meshes on client shutdown
-	while (RenderingEngine::get_mesh_cache()->getMeshCount() != 0) {
-		scene::IAnimatedMesh *mesh = RenderingEngine::get_mesh_cache()->getMeshByIndex(0);
-
-		if (mesh)
-			RenderingEngine::get_mesh_cache()->removeMesh(mesh);
-	}
+	m_rendering_engine->cleanupMeshCache();
 
 	delete m_minimap;
 	m_minimap = nullptr;
@@ -559,6 +555,29 @@ void Client::step(float dtime)
 			m_media_downloader = NULL;
 		}
 	}
+	{
+		// Acknowledge dynamic media downloads to server
+		std::vector<u32> done;
+		for (auto it = m_pending_media_downloads.begin();
+				it != m_pending_media_downloads.end();) {
+			assert(it->second->isStarted());
+			it->second->step(this);
+			if (it->second->isDone()) {
+				done.emplace_back(it->first);
+
+				it = m_pending_media_downloads.erase(it);
+			} else {
+				it++;
+			}
+
+			if (done.size() == 255) { // maximum in one packet
+				sendHaveMedia(done);
+				done.clear();
+			}
+		}
+		if (!done.empty())
+			sendHaveMedia(done);
+	}
 
 	/*
 		If the server didn't update the inventory in a while, revert
@@ -660,18 +679,11 @@ bool Client::loadMedia(const std::string &data, const std::string &filename,
 		TRACESTREAM(<< "Client: Attempting to load image "
 			<< "file \"" << filename << "\"" << std::endl);
 
-		io::IFileSystem *irrfs = RenderingEngine::get_filesystem();
-		video::IVideoDriver *vdrv = RenderingEngine::get_video_driver();
+		io::IFileSystem *irrfs = m_rendering_engine->get_filesystem();
+		video::IVideoDriver *vdrv = m_rendering_engine->get_video_driver();
 
-#if IRRLICHT_VERSION_MAJOR == 1 && IRRLICHT_VERSION_MINOR > 8
 		io::IReadFile *rfile = irrfs->createMemoryReadFile(
 				data.c_str(), data.size(), "_tempreadfile");
-#else
-		// Silly irrlicht's const-incorrectness
-		Buffer<char> data_rw(data.c_str(), data.size());
-		io::IReadFile *rfile = irrfs->createMemoryReadFile(
-				*data_rw, data_rw.getSize(), "_tempreadfile");
-#endif
 
 		FATAL_ERROR_IF(!rfile, "Could not create irrlicht memory file.");
 
@@ -781,7 +793,8 @@ void Client::request_media(const std::vector<std::string> &file_requests)
 	Send(&pkt);
 
 	infostream << "Client: Sending media request list to server ("
-			<< file_requests.size() << " files. packet size)" << std::endl;
+			<< file_requests.size() << " files, packet size "
+			<< pkt.getSize() << ")" << std::endl;
 }
 
 void Client::initLocalMapSaving(const Address &address,
@@ -1306,6 +1319,19 @@ void Client::sendPlayerPos()
 	Send(&pkt);
 }
 
+void Client::sendHaveMedia(const std::vector<u32> &tokens)
+{
+	NetworkPacket pkt(TOSERVER_HAVE_MEDIA, 1 + tokens.size() * 4);
+
+	sanity_check(tokens.size() < 256);
+
+	pkt << static_cast<u8>(tokens.size());
+	for (u32 token : tokens)
+		pkt << token;
+
+	Send(&pkt);
+}
+
 void Client::removeNode(v3s16 p)
 {
 	std::map<v3s16, MapBlock*> modified_blocks;
@@ -1417,6 +1443,11 @@ bool Client::updateWieldedItem()
 		list->setModified(false);
 
 	return true;
+}
+
+scene::ISceneManager* Client::getSceneManager()
+{
+	return m_rendering_engine->get_scene_manager();
 }
 
 Inventory* Client::getInventory(const InventoryLocation &loc)
@@ -1662,15 +1693,15 @@ float Client::mediaReceiveProgress()
 	return 1.0; // downloader only exists when not yet done
 }
 
-typedef struct TextureUpdateArgs {
+struct TextureUpdateArgs {
 	gui::IGUIEnvironment *guienv;
 	u64 last_time_ms;
 	u16 last_percent;
 	const wchar_t* text_base;
 	ITextureSource *tsrc;
-} TextureUpdateArgs;
+};
 
-void texture_update_progress(void *args, u32 progress, u32 max_progress)
+void Client::showUpdateProgressTexture(void *args, u32 progress, u32 max_progress)
 {
 		TextureUpdateArgs* targs = (TextureUpdateArgs*) args;
 		u16 cur_percent = ceil(progress / (double) max_progress * 100.);
@@ -1687,9 +1718,9 @@ void texture_update_progress(void *args, u32 progress, u32 max_progress)
 
 		if (do_draw) {
 			targs->last_time_ms = time_ms;
-			std::basic_stringstream<wchar_t> strm;
-			strm << targs->text_base << " " << targs->last_percent << "%...";
-			RenderingEngine::draw_load_screen(strm.str(), targs->guienv, targs->tsrc, 0,
+			std::wostringstream strm;
+			strm << targs->text_base << L" " << targs->last_percent << L"%...";
+			m_rendering_engine->draw_load_screen(strm.str(), targs->guienv, targs->tsrc, 0,
 				72 + (u16) ((18. / 100.) * (double) targs->last_percent), true);
 		}
 }
@@ -1710,21 +1741,21 @@ void Client::afterContentReceived()
 
 	// Rebuild inherited images and recreate textures
 	infostream<<"- Rebuilding images and textures"<<std::endl;
-	RenderingEngine::draw_load_screen(text, guienv, m_tsrc, 0, 70);
+	m_rendering_engine->draw_load_screen(text, guienv, m_tsrc, 0, 70);
 	m_tsrc->rebuildImagesAndTextures();
 	delete[] text;
 
 	// Rebuild shaders
 	infostream<<"- Rebuilding shaders"<<std::endl;
 	text = wgettext("Rebuilding shaders...");
-	RenderingEngine::draw_load_screen(text, guienv, m_tsrc, 0, 71);
+	m_rendering_engine->draw_load_screen(text, guienv, m_tsrc, 0, 71);
 	m_shsrc->rebuildShaders();
 	delete[] text;
 
 	// Update node aliases
 	infostream<<"- Updating node aliases"<<std::endl;
 	text = wgettext("Initializing nodes...");
-	RenderingEngine::draw_load_screen(text, guienv, m_tsrc, 0, 72);
+	m_rendering_engine->draw_load_screen(text, guienv, m_tsrc, 0, 72);
 	m_nodedef->updateAliases(m_itemdef);
 	for (const auto &path : getTextureDirs()) {
 		TextureOverrideSource override_source(path + DIR_DELIM + "override.txt");
@@ -1741,9 +1772,9 @@ void Client::afterContentReceived()
 	tu_args.guienv = guienv;
 	tu_args.last_time_ms = porting::getTimeMs();
 	tu_args.last_percent = 0;
-	tu_args.text_base =  wgettext("Initializing nodes");
+	tu_args.text_base = wgettext("Initializing nodes");
 	tu_args.tsrc = m_tsrc;
-	m_nodedef->updateTextures(this, texture_update_progress, &tu_args);
+	m_nodedef->updateTextures(this, &tu_args);
 	delete[] tu_args.text_base;
 
 	// Start mesh update thread after setting up content definitions
@@ -1757,7 +1788,7 @@ void Client::afterContentReceived()
 		m_script->on_client_ready(m_env.getLocalPlayer());
 
 	text = wgettext("Done!");
-	RenderingEngine::draw_load_screen(text, guienv, m_tsrc, 0, 100);
+	m_rendering_engine->draw_load_screen(text, guienv, m_tsrc, 0, 100);
 	infostream<<"Client::afterContentReceived() done"<<std::endl;
 	delete[] text;
 }
@@ -1775,7 +1806,7 @@ float Client::getCurRate()
 
 void Client::makeScreenshot()
 {
-	irr::video::IVideoDriver *driver = RenderingEngine::get_video_driver();
+	irr::video::IVideoDriver *driver = m_rendering_engine->get_video_driver();
 	irr::video::IImage* const raw_image = driver->createScreenShot();
 
 	if (!raw_image)
@@ -1917,23 +1948,17 @@ scene::IAnimatedMesh* Client::getMesh(const std::string &filename, bool cache)
 
 	// Create the mesh, remove it from cache and return it
 	// This allows unique vertex colors and other properties for each instance
-#if IRRLICHT_VERSION_MAJOR == 1 && IRRLICHT_VERSION_MINOR > 8
-	io::IReadFile *rfile = RenderingEngine::get_filesystem()->createMemoryReadFile(
+	io::IReadFile *rfile = m_rendering_engine->get_filesystem()->createMemoryReadFile(
 			data.c_str(), data.size(), filename.c_str());
-#else
-	Buffer<char> data_rw(data.c_str(), data.size()); // Const-incorrect Irrlicht
-	io::IReadFile *rfile = RenderingEngine::get_filesystem()->createMemoryReadFile(
-			*data_rw, data_rw.getSize(), filename.c_str());
-#endif
 	FATAL_ERROR_IF(!rfile, "Could not create/open RAM file");
 
-	scene::IAnimatedMesh *mesh = RenderingEngine::get_scene_manager()->getMesh(rfile);
+	scene::IAnimatedMesh *mesh = m_rendering_engine->get_scene_manager()->getMesh(rfile);
 	rfile->drop();
 	if (!mesh)
 		return nullptr;
 	mesh->grab();
 	if (!cache)
-		RenderingEngine::get_mesh_cache()->removeMesh(mesh);
+		m_rendering_engine->removeMesh(mesh);
 	return mesh;
 }
 

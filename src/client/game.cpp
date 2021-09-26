@@ -566,7 +566,7 @@ public:
 	}
 };
 
-#ifdef __ANDROID__
+#ifdef HAVE_TOUCHSCREENGUI
 #define SIZE_TAG "size[11,5.5]"
 #else
 #define SIZE_TAG "size[11,5.5,true]" // Fixed size on desktop
@@ -642,6 +642,7 @@ public:
 
 	bool startup(bool *kill,
 			InputHandler *input,
+			RenderingEngine *rendering_engine,
 			const GameStartData &game_params,
 			std::string &error_message,
 			bool *reconnect,
@@ -651,8 +652,6 @@ public:
 	void shutdown();
 
 protected:
-
-	void extendedResourceCleanup();
 
 	// Basic initialisation
 	bool init(const std::string &map_dir, const std::string &address,
@@ -677,6 +676,7 @@ protected:
 	bool handleCallbacks();
 	void processQueues();
 	void updateProfilers(const RunStats &stats, const FpsControl &draw_times, f32 dtime);
+	void updateDebugState();
 	void updateStats(RunStats *stats, const FpsControl &draw_times, f32 dtime);
 	void updateProfilerGraphs(ProfilerGraph *graph);
 
@@ -694,6 +694,7 @@ protected:
 	void toggleFast();
 	void toggleNoClip();
 	void toggleCinematic();
+	void toggleBlockBounds();
 	void toggleAutoforward();
 
 	void toggleMinimap(bool shift_pressed);
@@ -739,6 +740,7 @@ protected:
 			const ItemStack &selected_item, const ItemStack &hand_item, f32 dtime);
 	void updateFrame(ProfilerGraph *graph, RunStats *stats, f32 dtime,
 			const CameraOrientation &cam);
+	void updateShadows();
 
 	// Misc
 	void limitFps(FpsControl *fps_timings, f32 *dtime);
@@ -802,7 +804,7 @@ private:
 		CameraOrientation *cam);
 	void handleClientEvent_CloudParams(ClientEvent *event, CameraOrientation *cam);
 
-	void updateChat(f32 dtime, const v2u32 &screensize);
+	void updateChat(f32 dtime);
 
 	bool nodePlacement(const ItemDefinition &selected_def, const ItemStack &selected_item,
 		const v3s16 &nodepos, const v3s16 &neighbourpos, const PointedThing &pointed,
@@ -855,6 +857,7 @@ private:
 	   these items (e.g. device)
 	*/
 	IrrlichtDevice *device;
+	RenderingEngine *m_rendering_engine;
 	video::IVideoDriver *driver;
 	scene::ISceneManager *smgr;
 	bool *kill;
@@ -898,8 +901,10 @@ private:
 	bool m_does_lost_focus_pause_game = false;
 
 	int m_reset_HW_buffer_counter = 0;
-#ifdef __ANDROID__
+#ifdef HAVE_TOUCHSCREENGUI
 	bool m_cache_hold_aux1;
+#endif
+#ifdef __ANDROID__
 	bool m_android_chat_open;
 #endif
 };
@@ -937,7 +942,7 @@ Game::Game() :
 
 	readSettings();
 
-#ifdef __ANDROID__
+#ifdef HAVE_TOUCHSCREENGUI
 	m_cache_hold_aux1 = false;	// This is initialised properly later
 #endif
 
@@ -968,7 +973,7 @@ Game::~Game()
 	delete itemdef_manager;
 	delete draw_control;
 
-	extendedResourceCleanup();
+	clearTextureNameCache();
 
 	g_settings->deregisterChangedCallback("doubletap_jump",
 		&settingChangedCallback, this);
@@ -996,6 +1001,7 @@ Game::~Game()
 
 bool Game::startup(bool *kill,
 		InputHandler *input,
+		RenderingEngine *rendering_engine,
 		const GameStartData &start_data,
 		std::string &error_message,
 		bool *reconnect,
@@ -1003,21 +1009,21 @@ bool Game::startup(bool *kill,
 {
 
 	// "cache"
-	this->device              = RenderingEngine::get_raw_device();
+	m_rendering_engine        = rendering_engine;
+	device                    = m_rendering_engine->get_raw_device();
 	this->kill                = kill;
 	this->error_message       = &error_message;
-	this->reconnect_requested = reconnect;
+	reconnect_requested       = reconnect;
 	this->input               = input;
 	this->chat_backend        = chat_backend;
-	this->simple_singleplayer_mode = start_data.isSinglePlayer();
+	simple_singleplayer_mode  = start_data.isSinglePlayer();
 
 	input->keycache.populate();
 
 	driver = device->getVideoDriver();
-	smgr = RenderingEngine::get_scene_manager();
+	smgr = m_rendering_engine->get_scene_manager();
 
-	RenderingEngine::get_scene_manager()->getParameters()->
-		setAttribute(scene::OBJ_LOADER_IGNORE_MATERIAL_FILES, true);
+	smgr->getParameters()->setAttribute(scene::OBJ_LOADER_IGNORE_MATERIAL_FILES, true);
 
 	// Reinit runData
 	runData = GameRunData();
@@ -1038,7 +1044,7 @@ bool Game::startup(bool *kill,
 	if (!createClient(start_data))
 		return false;
 
-	RenderingEngine::initialize(client, hud);
+	m_rendering_engine->initialize(client, hud);
 
 	return true;
 }
@@ -1057,11 +1063,11 @@ void Game::run()
 	Profiler::GraphValues dummyvalues;
 	g_profiler->graphGet(dummyvalues);
 
-	draw_times.last_time = RenderingEngine::get_timer_time();
+	draw_times.last_time = m_rendering_engine->get_timer_time();
 
 	set_light_table(g_settings->getFloat("display_gamma"));
 
-#ifdef __ANDROID__
+#ifdef HAVE_TOUCHSCREENGUI
 	m_cache_hold_aux1 = g_settings->getBool("fast_move")
 			&& client->checkPrivilege("fast");
 #endif
@@ -1069,12 +1075,12 @@ void Game::run()
 	irr::core::dimension2d<u32> previous_screen_size(g_settings->getU16("screen_w"),
 		g_settings->getU16("screen_h"));
 
-	while (RenderingEngine::run()
+	while (m_rendering_engine->run()
 			&& !(*kill || g_gamecallback->shutdown_requested
 			|| (server && server->isShutdownRequested()))) {
 
 		const irr::core::dimension2d<u32> &current_screen_size =
-			RenderingEngine::get_video_driver()->getScreenSize();
+			m_rendering_engine->get_video_driver()->getScreenSize();
 		// Verify if window size has changed and save it if it's the case
 		// Ensure evaluating settings->getBool after verifying screensize
 		// First condition is cheaper
@@ -1087,7 +1093,7 @@ void Game::run()
 		}
 
 		// Calculate dtime =
-		//    RenderingEngine::run() from this iteration
+		//    m_rendering_engine->run() from this iteration
 		//  + Sleep time until the wanted FPS are reached
 		limitFps(&draw_times, &dtime);
 
@@ -1106,6 +1112,7 @@ void Game::run()
 		m_game_ui->clearInfoText();
 		hud->resizeHotbar();
 
+
 		updateProfilers(stats, draw_times, dtime);
 		processUserInput(dtime);
 		// Update camera before player movement to avoid camera lag of one frame
@@ -1117,10 +1124,11 @@ void Game::run()
 		updatePlayerControl(cam_view);
 		step(&dtime);
 		processClientEvents(&cam_view_target);
+		updateDebugState();
 		updateCamera(draw_times.busy_time, dtime);
 		updateSound(dtime);
 		processPlayerInteraction(dtime, m_game_ui->m_flags.show_hud,
-			m_game_ui->m_flags.show_debug);
+			m_game_ui->m_flags.show_basic_debug);
 		updateFrame(&graph, &stats, dtime, cam_view);
 		updateProfilerGraphs(&graph);
 
@@ -1136,7 +1144,7 @@ void Game::run()
 
 void Game::shutdown()
 {
-	RenderingEngine::finalize();
+	m_rendering_engine->finalize();
 #if IRRLICHT_VERSION_MAJOR == 1 && IRRLICHT_VERSION_MINOR <= 8
 	if (g_settings->get("3d_mode") == "pageflip") {
 		driver->setRenderTarget(irr::video::ERT_STEREO_BOTH_BUFFERS);
@@ -1292,7 +1300,7 @@ bool Game::createClient(const GameStartData &start_data)
 {
 	showOverlayMessage(N_("Creating client..."), 0, 10);
 
-	draw_control = new MapDrawControl;
+	draw_control = new MapDrawControl();
 	if (!draw_control)
 		return false;
 
@@ -1333,7 +1341,7 @@ bool Game::createClient(const GameStartData &start_data)
 
 	/* Camera
 	 */
-	camera = new Camera(*draw_control, client);
+	camera = new Camera(*draw_control, client, m_rendering_engine);
 	if (!camera->successfullyCreated(*error_message))
 		return false;
 	client->setCamera(camera);
@@ -1345,7 +1353,7 @@ bool Game::createClient(const GameStartData &start_data)
 
 	/* Skybox
 	 */
-	sky = new Sky(-1, texture_src, shader_src);
+	sky = new Sky(-1, m_rendering_engine, texture_src, shader_src);
 	scsf->setSky(sky);
 	skybox = NULL;	// This is used/set later on in the main run loop
 
@@ -1388,7 +1396,7 @@ bool Game::createClient(const GameStartData &start_data)
 	player->hurt_tilt_timer = 0;
 	player->hurt_tilt_strength = 0;
 
-	hud = new Hud(guienv, client, player, &player->inventory);
+	hud = new Hud(client, player, &player->inventory);
 
 	mapper = client->getMinimap();
 
@@ -1465,7 +1473,7 @@ bool Game::connectToServer(const GameStartData &start_data,
 			start_data.password, start_data.address,
 			*draw_control, texture_src, shader_src,
 			itemdef_manager, nodedef_manager, sound, eventmgr,
-			connect_address.isIPv6(), m_game_ui.get());
+			m_rendering_engine, connect_address.isIPv6(), m_game_ui.get());
 
 	client->m_simple_singleplayer_mode = simple_singleplayer_mode;
 
@@ -1487,9 +1495,9 @@ bool Game::connectToServer(const GameStartData &start_data,
 		f32 dtime;
 		f32 wait_time = 0; // in seconds
 
-		fps_control.last_time = RenderingEngine::get_timer_time();
+		fps_control.last_time = m_rendering_engine->get_timer_time();
 
-		while (RenderingEngine::run()) {
+		while (m_rendering_engine->run()) {
 
 			limitFps(&fps_control, &dtime);
 
@@ -1526,7 +1534,7 @@ bool Game::connectToServer(const GameStartData &start_data,
 			if (client->m_is_registration_confirmation_state) {
 				if (registration_confirmation_shown) {
 					// Keep drawing the GUI
-					RenderingEngine::draw_menu_scene(guienv, dtime, true);
+					m_rendering_engine->draw_menu_scene(guienv, dtime, true);
 				} else {
 					registration_confirmation_shown = true;
 					(new GUIConfirmRegistration(guienv, guienv->getRootGUIElement(), -1,
@@ -1562,9 +1570,9 @@ bool Game::getServerContent(bool *aborted)
 	FpsControl fps_control = { 0 };
 	f32 dtime; // in seconds
 
-	fps_control.last_time = RenderingEngine::get_timer_time();
+	fps_control.last_time = m_rendering_engine->get_timer_time();
 
-	while (RenderingEngine::run()) {
+	while (m_rendering_engine->run()) {
 
 		limitFps(&fps_control, &dtime);
 
@@ -1602,17 +1610,17 @@ bool Game::getServerContent(bool *aborted)
 		if (!client->itemdefReceived()) {
 			const wchar_t *text = wgettext("Item definitions...");
 			progress = 25;
-			RenderingEngine::draw_load_screen(text, guienv, texture_src,
+			m_rendering_engine->draw_load_screen(text, guienv, texture_src,
 				dtime, progress);
 			delete[] text;
 		} else if (!client->nodedefReceived()) {
 			const wchar_t *text = wgettext("Node definitions...");
 			progress = 30;
-			RenderingEngine::draw_load_screen(text, guienv, texture_src,
+			m_rendering_engine->draw_load_screen(text, guienv, texture_src,
 				dtime, progress);
 			delete[] text;
 		} else {
-			std::stringstream message;
+			std::ostringstream message;
 			std::fixed(message);
 			message.precision(0);
 			float receive = client->mediaReceiveProgress() * 100;
@@ -1635,7 +1643,7 @@ bool Game::getServerContent(bool *aborted)
 			}
 
 			progress = 30 + client->mediaReceiveProgress() * 35 + 0.5;
-			RenderingEngine::draw_load_screen(utf8_to_wide(message.str()), guienv,
+			m_rendering_engine->draw_load_screen(utf8_to_wide(message.str()), guienv,
 				texture_src, dtime, progress);
 		}
 	}
@@ -1721,6 +1729,25 @@ void Game::processQueues()
 	shader_src->processQueue();
 }
 
+void Game::updateDebugState()
+{
+	bool has_basic_debug = client->checkPrivilege("basic_debug");
+	bool has_debug = client->checkPrivilege("debug");
+
+	if (m_game_ui->m_flags.show_basic_debug) {
+		if (!has_basic_debug) {
+			m_game_ui->m_flags.show_basic_debug = false;
+		}
+	} else if (m_game_ui->m_flags.show_minimal_debug) {
+		if (has_basic_debug) {
+			m_game_ui->m_flags.show_basic_debug = true;
+		}
+	}
+	if (!has_basic_debug)
+		hud->disableBlockBounds();
+	if (!has_debug)
+		draw_control->show_wireframe = false;
+}
 
 void Game::updateProfilers(const RunStats &stats, const FpsControl &draw_times,
 		f32 dtime)
@@ -1820,6 +1847,7 @@ void Game::processUserInput(f32 dtime)
 	else if (g_touchscreengui) {
 		/* on touchscreengui step may generate own input events which ain't
 		 * what we want in case we just did clear them */
+		g_touchscreengui->show();
 		g_touchscreengui->step(dtime);
 	}
 #endif
@@ -1902,24 +1930,18 @@ void Game::processKeyInput()
 	} else if (wasKeyDown(KeyType::INC_VOLUME)) {
 		if (g_settings->getBool("enable_sound")) {
 			float new_volume = rangelim(g_settings->getFloat("sound_volume") + 0.1f, 0.0f, 1.0f);
-			wchar_t buf[100];
 			g_settings->setFloat("sound_volume", new_volume);
-			const wchar_t *str = wgettext("Volume changed to %d%%");
-			swprintf(buf, sizeof(buf) / sizeof(wchar_t), str, myround(new_volume * 100));
-			delete[] str;
-			m_game_ui->showStatusText(buf);
+			std::wstring msg = fwgettext("Volume changed to %d%%", myround(new_volume * 100));
+			m_game_ui->showStatusText(msg);
 		} else {
 			m_game_ui->showTranslatedStatusText("Sound system is disabled");
 		}
 	} else if (wasKeyDown(KeyType::DEC_VOLUME)) {
 		if (g_settings->getBool("enable_sound")) {
 			float new_volume = rangelim(g_settings->getFloat("sound_volume") - 0.1f, 0.0f, 1.0f);
-			wchar_t buf[100];
 			g_settings->setFloat("sound_volume", new_volume);
-			const wchar_t *str = wgettext("Volume changed to %d%%");
-			swprintf(buf, sizeof(buf) / sizeof(wchar_t), str, myround(new_volume * 100));
-			delete[] str;
-			m_game_ui->showStatusText(buf);
+			std::wstring msg = fwgettext("Volume changed to %d%%", myround(new_volume * 100));
+			m_game_ui->showStatusText(msg);
 		} else {
 			m_game_ui->showTranslatedStatusText("Sound system is disabled");
 		}
@@ -1933,7 +1955,7 @@ void Game::processKeyInput()
 	} else if (wasKeyDown(KeyType::SCREENSHOT)) {
 		client->makeScreenshot();
 	} else if (wasKeyDown(KeyType::TOGGLE_BLOCK_BOUNDS)) {
-		hud->toggleBlockBounds();
+		toggleBlockBounds();
 	} else if (wasKeyDown(KeyType::TOGGLE_HUD)) {
 		m_game_ui->toggleHud();
 	} else if (wasKeyDown(KeyType::MINIMAP)) {
@@ -2046,8 +2068,8 @@ void Game::openInventory()
 			|| !client->getScript()->on_inventory_open(fs_src->m_client->getInventory(inventoryloc))) {
 		TextDest *txt_dst = new TextDestPlayerInventory(client);
 		auto *&formspec = m_game_ui->updateFormspec("");
-		GUIFormSpecMenu::create(formspec, client, &input->joystick, fs_src,
-			txt_dst, client->getFormspecPrepend(), sound);
+		GUIFormSpecMenu::create(formspec, client, m_rendering_engine->get_gui_env(),
+			&input->joystick, fs_src, txt_dst, client->getFormspecPrepend(), sound);
 
 		formspec->setFormSpec(fs_src->getForm(), inventoryloc);
 	}
@@ -2138,7 +2160,7 @@ void Game::toggleFast()
 		m_game_ui->showTranslatedStatusText("Fast mode disabled");
 	}
 
-#ifdef __ANDROID__
+#ifdef HAVE_TOUCHSCREENGUI
 	m_cache_hold_aux1 = fast_move && has_fast_privs;
 #endif
 }
@@ -2169,6 +2191,32 @@ void Game::toggleCinematic()
 		m_game_ui->showTranslatedStatusText("Cinematic mode enabled");
 	else
 		m_game_ui->showTranslatedStatusText("Cinematic mode disabled");
+}
+
+void Game::toggleBlockBounds()
+{
+	if (client->checkPrivilege("basic_debug")) {
+		enum Hud::BlockBoundsMode newmode = hud->toggleBlockBounds();
+		switch (newmode) {
+			case Hud::BLOCK_BOUNDS_OFF:
+				m_game_ui->showTranslatedStatusText("Block bounds hidden");
+				break;
+			case Hud::BLOCK_BOUNDS_CURRENT:
+				m_game_ui->showTranslatedStatusText("Block bounds shown for current block");
+				break;
+			case Hud::BLOCK_BOUNDS_NEAR:
+				m_game_ui->showTranslatedStatusText("Block bounds shown for nearby blocks");
+				break;
+			case Hud::BLOCK_BOUNDS_MAX:
+				m_game_ui->showTranslatedStatusText("Block bounds shown for all blocks");
+				break;
+			default:
+				break;
+		}
+
+	} else {
+		m_game_ui->showTranslatedStatusText("Can't show block bounds (need 'basic_debug' privilege)");
+	}
 }
 
 // Autoforward by toggling continuous forward.
@@ -2234,24 +2282,41 @@ void Game::toggleFog()
 
 void Game::toggleDebug()
 {
-	// Initial / 4x toggle: Chat only
-	// 1x toggle: Debug text with chat
+	// Initial: No debug info
+	// 1x toggle: Debug text
 	// 2x toggle: Debug text with profiler graph
-	// 3x toggle: Debug text and wireframe
-	if (!m_game_ui->m_flags.show_debug) {
-		m_game_ui->m_flags.show_debug = true;
+	// 3x toggle: Debug text and wireframe (needs "debug" priv)
+	// Next toggle: Back to initial
+	//
+	// The debug text can be in 2 modes: minimal and basic.
+	// * Minimal: Only technical client info that not gameplay-relevant
+	// * Basic: Info that might give gameplay advantage, e.g. pos, angle
+	// Basic mode is used when player has "basic_debug" priv,
+	// otherwise the Minimal mode is used.
+	if (!m_game_ui->m_flags.show_minimal_debug) {
+		m_game_ui->m_flags.show_minimal_debug = true;
+		if (client->checkPrivilege("basic_debug")) {
+			m_game_ui->m_flags.show_basic_debug = true;
+		}
 		m_game_ui->m_flags.show_profiler_graph = false;
 		draw_control->show_wireframe = false;
 		m_game_ui->showTranslatedStatusText("Debug info shown");
 	} else if (!m_game_ui->m_flags.show_profiler_graph && !draw_control->show_wireframe) {
+		if (client->checkPrivilege("basic_debug")) {
+			m_game_ui->m_flags.show_basic_debug = true;
+		}
 		m_game_ui->m_flags.show_profiler_graph = true;
 		m_game_ui->showTranslatedStatusText("Profiler graph shown");
 	} else if (!draw_control->show_wireframe && client->checkPrivilege("debug")) {
+		if (client->checkPrivilege("basic_debug")) {
+			m_game_ui->m_flags.show_basic_debug = true;
+		}
 		m_game_ui->m_flags.show_profiler_graph = false;
 		draw_control->show_wireframe = true;
 		m_game_ui->showTranslatedStatusText("Wireframe shown");
 	} else {
-		m_game_ui->m_flags.show_debug = false;
+		m_game_ui->m_flags.show_minimal_debug = false;
+		m_game_ui->m_flags.show_basic_debug = false;
 		m_game_ui->m_flags.show_profiler_graph = false;
 		draw_control->show_wireframe = false;
 		if (client->checkPrivilege("debug")) {
@@ -2278,20 +2343,13 @@ void Game::increaseViewRange()
 	s16 range = g_settings->getS16("viewing_range");
 	s16 range_new = range + 10;
 
-	wchar_t buf[255];
-	const wchar_t *str;
 	if (range_new > 4000) {
 		range_new = 4000;
-		str = wgettext("Viewing range is at maximum: %d");
-		swprintf(buf, sizeof(buf) / sizeof(wchar_t), str, range_new);
-		delete[] str;
-		m_game_ui->showStatusText(buf);
-
+		std::wstring msg = fwgettext("Viewing range is at maximum: %d", range_new);
+		m_game_ui->showStatusText(msg);
 	} else {
-		str = wgettext("Viewing range changed to %d");
-		swprintf(buf, sizeof(buf) / sizeof(wchar_t), str, range_new);
-		delete[] str;
-		m_game_ui->showStatusText(buf);
+		std::wstring msg = fwgettext("Viewing range changed to %d", range_new);
+		m_game_ui->showStatusText(msg);
 	}
 	g_settings->set("viewing_range", itos(range_new));
 }
@@ -2302,19 +2360,13 @@ void Game::decreaseViewRange()
 	s16 range = g_settings->getS16("viewing_range");
 	s16 range_new = range - 10;
 
-	wchar_t buf[255];
-	const wchar_t *str;
 	if (range_new < 20) {
 		range_new = 20;
-		str = wgettext("Viewing range is at minimum: %d");
-		swprintf(buf, sizeof(buf) / sizeof(wchar_t), str, range_new);
-		delete[] str;
-		m_game_ui->showStatusText(buf);
+		std::wstring msg = fwgettext("Viewing range is at minimum: %d", range_new);
+		m_game_ui->showStatusText(msg);
 	} else {
-		str = wgettext("Viewing range changed to %d");
-		swprintf(buf, sizeof(buf) / sizeof(wchar_t), str, range_new);
-		delete[] str;
-		m_game_ui->showStatusText(buf);
+		std::wstring msg = fwgettext("Viewing range changed to %d", range_new);
+		m_game_ui->showStatusText(msg);
 	}
 	g_settings->set("viewing_range", itos(range_new));
 }
@@ -2411,7 +2463,7 @@ void Game::updateCameraOrientation(CameraOrientation *cam, float dtime)
 
 	if (m_cache_enable_joysticks) {
 		f32 sens_scale = getSensitivityScaleFactor();
-		f32 c = m_cache_joystick_frustum_sensitivity * (1.f / 32767.f) * dtime * sens_scale;
+		f32 c = m_cache_joystick_frustum_sensitivity * dtime * sens_scale;
 		cam->camera_yaw -= input->joystick.getAxisWithoutDead(JA_FRUSTUM_HORIZONTAL) * c;
 		cam->camera_pitch += input->joystick.getAxisWithoutDead(JA_FRUSTUM_VERTICAL) * c;
 	}
@@ -2422,18 +2474,12 @@ void Game::updateCameraOrientation(CameraOrientation *cam, float dtime)
 
 void Game::updatePlayerControl(const CameraOrientation &cam)
 {
+	LocalPlayer *player = client->getEnv().getLocalPlayer();
+
 	//TimeTaker tt("update player control", NULL, PRECISION_NANO);
 
-	// DO NOT use the isKeyDown method for the forward, backward, left, right
-	// buttons, as the code that uses the controls needs to be able to
-	// distinguish between the two in order to know when to use joysticks.
-
 	PlayerControl control(
-		input->isKeyDown(KeyType::FORWARD),
-		input->isKeyDown(KeyType::BACKWARD),
-		input->isKeyDown(KeyType::LEFT),
-		input->isKeyDown(KeyType::RIGHT),
-		isKeyDown(KeyType::JUMP),
+		isKeyDown(KeyType::JUMP) || player->getAutojump(),
 		isKeyDown(KeyType::AUX1),
 		isKeyDown(KeyType::SNEAK),
 		isKeyDown(KeyType::ZOOM),
@@ -2441,48 +2487,57 @@ void Game::updatePlayerControl(const CameraOrientation &cam)
 		isKeyDown(KeyType::PLACE),
 		cam.camera_pitch,
 		cam.camera_yaw,
-		input->joystick.getAxisWithoutDead(JA_SIDEWARD_MOVE),
-		input->joystick.getAxisWithoutDead(JA_FORWARD_MOVE)
+		input->getMovementSpeed(),
+		input->getMovementDirection()
 	);
 
-	u32 keypress_bits = (
-			( (u32)(isKeyDown(KeyType::FORWARD)                       & 0x1) << 0) |
-			( (u32)(isKeyDown(KeyType::BACKWARD)                      & 0x1) << 1) |
-			( (u32)(isKeyDown(KeyType::LEFT)                          & 0x1) << 2) |
-			( (u32)(isKeyDown(KeyType::RIGHT)                         & 0x1) << 3) |
-			( (u32)(isKeyDown(KeyType::JUMP)                          & 0x1) << 4) |
-			( (u32)(isKeyDown(KeyType::AUX1)                          & 0x1) << 5) |
-			( (u32)(isKeyDown(KeyType::SNEAK)                         & 0x1) << 6) |
-			( (u32)(isKeyDown(KeyType::DIG)                           & 0x1) << 7) |
-			( (u32)(isKeyDown(KeyType::PLACE)                         & 0x1) << 8) |
-			( (u32)(isKeyDown(KeyType::ZOOM)                          & 0x1) << 9)
-		);
+	// autoforward if set: move towards pointed position at maximum speed
+	if (player->getPlayerSettings().continuous_forward &&
+			client->activeObjectsReceived() && !player->isDead()) {
+		control.movement_speed = 1.0f;
+		control.movement_direction = 0.0f;
+	}
 
-#ifdef ANDROID
-	/* For Android, simulate holding down AUX1 (fast move) if the user has
+#ifdef HAVE_TOUCHSCREENGUI
+	/* For touch, simulate holding down AUX1 (fast move) if the user has
 	 * the fast_move setting toggled on. If there is an aux1 key defined for
-	 * Android then its meaning is inverted (i.e. holding aux1 means walk and
+	 * touch then its meaning is inverted (i.e. holding aux1 means walk and
 	 * not fast)
 	 */
 	if (m_cache_hold_aux1) {
 		control.aux1 = control.aux1 ^ true;
-		keypress_bits ^= ((u32)(1U << 5));
 	}
 #endif
 
-	LocalPlayer *player = client->getEnv().getLocalPlayer();
+	u32 keypress_bits = (
+			( (u32)(control.jump  & 0x1) << 4) |
+			( (u32)(control.aux1  & 0x1) << 5) |
+			( (u32)(control.sneak & 0x1) << 6) |
+			( (u32)(control.dig   & 0x1) << 7) |
+			( (u32)(control.place & 0x1) << 8) |
+			( (u32)(control.zoom  & 0x1) << 9)
+		);
 
-	// autojump if set: simulate "jump" key
-	if (player->getAutojump()) {
-		control.jump = true;
-		keypress_bits |= 1U << 4;
-	}
+	// Set direction keys to ensure mod compatibility
+	if (control.movement_speed > 0.001f) {
+		float absolute_direction;
 
-	// autoforward if set: simulate "up" key
-	if (player->getPlayerSettings().continuous_forward &&
-			client->activeObjectsReceived() && !player->isDead()) {
-		control.up = true;
-		keypress_bits |= 1U << 0;
+		// Check in original orientation (absolute value indicates forward / backward)
+		absolute_direction = abs(control.movement_direction);
+		if (absolute_direction < (3.0f / 8.0f * M_PI))
+			keypress_bits |= (u32)(0x1 << 0); // Forward
+		if (absolute_direction > (5.0f / 8.0f * M_PI))
+			keypress_bits |= (u32)(0x1 << 1); // Backward
+
+		// Rotate entire coordinate system by 90 degrees (absolute value indicates left / right)
+		absolute_direction = control.movement_direction + M_PI_2;
+		if (absolute_direction >= M_PI)
+			absolute_direction -= 2 * M_PI;
+		absolute_direction = abs(absolute_direction);
+		if (absolute_direction < (3.0f / 8.0f * M_PI))
+			keypress_bits |= (u32)(0x1 << 2); // Left
+		if (absolute_direction > (5.0f / 8.0f * M_PI))
+			keypress_bits |= (u32)(0x1 << 3); // Right
 	}
 
 	client->setPlayerControl(control);
@@ -2625,8 +2680,8 @@ void Game::handleClientEvent_ShowFormSpec(ClientEvent *event, CameraOrientation 
 			new TextDestPlayerInventory(client, *(event->show_formspec.formname));
 
 		auto *&formspec = m_game_ui->updateFormspec(*(event->show_formspec.formname));
-		GUIFormSpecMenu::create(formspec, client, &input->joystick,
-			fs_src, txt_dst, client->getFormspecPrepend(), sound);
+		GUIFormSpecMenu::create(formspec, client, m_rendering_engine->get_gui_env(),
+			&input->joystick, fs_src, txt_dst, client->getFormspecPrepend(), sound);
 	}
 
 	delete event->show_formspec.formspec;
@@ -2638,8 +2693,8 @@ void Game::handleClientEvent_ShowLocalFormSpec(ClientEvent *event, CameraOrienta
 	FormspecFormSource *fs_src = new FormspecFormSource(*event->show_formspec.formspec);
 	LocalFormspecHandler *txt_dst =
 		new LocalFormspecHandler(*event->show_formspec.formname, client);
-	GUIFormSpecMenu::create(m_game_ui->getFormspecGUI(), client, &input->joystick,
-			fs_src, txt_dst, client->getFormspecPrepend(), sound);
+	GUIFormSpecMenu::create(m_game_ui->getFormspecGUI(), client, m_rendering_engine->get_gui_env(),
+			&input->joystick, fs_src, txt_dst, client->getFormspecPrepend(), sound);
 
 	delete event->show_formspec.formspec;
 	delete event->show_formspec.formname;
@@ -2679,6 +2734,7 @@ void Game::handleClientEvent_HudAdd(ClientEvent *event, CameraOrientation *cam)
 	e->size      = event->hudadd->size;
 	e->z_index   = event->hudadd->z_index;
 	e->text2     = event->hudadd->text2;
+	e->style     = event->hudadd->style;
 	m_hud_server_to_client[server_id] = player->addHud(e);
 
 	delete event->hudadd;
@@ -2744,6 +2800,8 @@ void Game::handleClientEvent_HudChange(ClientEvent *event, CameraOrientation *ca
 		CASE_SET(HUD_STAT_Z_INDEX, z_index, data);
 
 		CASE_SET(HUD_STAT_TEXT2, text2, sdata);
+
+		CASE_SET(HUD_STAT_STYLE, style, data);
 	}
 
 #undef CASE_SET
@@ -2803,6 +2861,7 @@ void Game::handleClientEvent_SetSky(ClientEvent *event, CameraOrientation *cam)
 			"custom"
 		);
 	}
+
 	delete event->set_sky;
 }
 
@@ -2866,7 +2925,7 @@ void Game::processClientEvents(CameraOrientation *cam)
 	}
 }
 
-void Game::updateChat(f32 dtime, const v2u32 &screensize)
+void Game::updateChat(f32 dtime)
 {
 	// Get new messages from error log buffer
 	while (!m_chat_log_buf.empty())
@@ -2882,8 +2941,14 @@ void Game::updateChat(f32 dtime, const v2u32 &screensize)
 	chat_backend->step(dtime);
 
 	// Display all messages in a static text element
-	m_game_ui->setChatText(chat_backend->getRecentChat(),
-		chat_backend->getRecentBuffer().getLineCount());
+	auto &buf = chat_backend->getRecentBuffer();
+	if (buf.getLinesModified()) {
+		buf.resetLinesModified();
+		m_game_ui->setChatText(chat_backend->getRecentChat(), buf.getLineCount());
+	}
+
+	// Make sure that the size is still correct
+	m_game_ui->updateChatSize();
 }
 
 void Game::updateCamera(u32 busy_time, f32 dtime)
@@ -3330,8 +3395,8 @@ bool Game::nodePlacement(const ItemDefinition &selected_def,
 		TextDest *txt_dst = new TextDestNodeMetadata(nodepos, client);
 
 		auto *&formspec = m_game_ui->updateFormspec("");
-		GUIFormSpecMenu::create(formspec, client, &input->joystick, fs_src,
-			txt_dst, client->getFormspecPrepend(), sound);
+		GUIFormSpecMenu::create(formspec, client, m_rendering_engine->get_gui_env(),
+			&input->joystick, fs_src, txt_dst, client->getFormspecPrepend(), sound);
 
 		formspec->setFormSpec(meta->getString("formspec"), inventoryloc);
 		return false;
@@ -3805,9 +3870,7 @@ void Game::updateFrame(ProfilerGraph *graph, RunStats *stats, f32 dtime,
 		Get chat messages from client
 	*/
 
-	v2u32 screensize = driver->getScreenSize();
-
-	updateChat(dtime, screensize);
+	updateChat(dtime);
 
 	/*
 		Inventory
@@ -3829,13 +3892,20 @@ void Game::updateFrame(ProfilerGraph *graph, RunStats *stats, f32 dtime,
 	*/
 	runData.update_draw_list_timer += dtime;
 
+	float update_draw_list_delta = 0.2f;
+
 	v3f camera_direction = camera->getDirection();
-	if (runData.update_draw_list_timer >= 0.2
+	if (runData.update_draw_list_timer >= update_draw_list_delta
 			|| runData.update_draw_list_last_cam_dir.getDistanceFrom(camera_direction) > 0.2
 			|| m_camera_offset_changed) {
+
 		runData.update_draw_list_timer = 0;
 		client->getEnv().getClientMap().updateDrawList();
 		runData.update_draw_list_last_cam_dir = camera_direction;
+	}
+
+	if (RenderingEngine::get_shadow_renderer()) {
+		updateShadows();
 	}
 
 	m_game_ui->update(*stats, client, draw_control, cam, runData.pointed_old, gui_chat_console, dtime);
@@ -3888,12 +3958,14 @@ void Game::updateFrame(ProfilerGraph *graph, RunStats *stats, f32 dtime,
 	} catch (SettingNotFoundException) {
 	}
 #endif
-	RenderingEngine::draw_scene(skycolor, m_game_ui->m_flags.show_hud,
+	m_rendering_engine->draw_scene(skycolor, m_game_ui->m_flags.show_hud,
 			m_game_ui->m_flags.show_minimap, draw_wield_tool, draw_crosshair);
 
 	/*
 		Profiler graph
 	*/
+	v2u32 screensize = driver->getScreenSize();
+
 	if (m_game_ui->m_flags.show_profiler_graph)
 		graph->draw(10, screensize.Y - 10, driver, g_fontengine->getFont());
 
@@ -3966,7 +4038,34 @@ inline void Game::updateProfilerGraphs(ProfilerGraph *graph)
 	graph->put(values);
 }
 
+/****************************************************************************
+ * Shadows
+ *****************************************************************************/
+void Game::updateShadows()
+{
+	ShadowRenderer *shadow = RenderingEngine::get_shadow_renderer();
+	if (!shadow)
+		return;
 
+	float in_timeofday = fmod(runData.time_of_day_smooth, 1.0f);
+
+	float timeoftheday = fmod(getWickedTimeOfDay(in_timeofday) + 0.75f, 0.5f) + 0.25f;
+	const float offset_constant = 10000.0f;
+
+	v3f light(0.0f, 0.0f, -1.0f);
+	light.rotateXZBy(90);
+	light.rotateXYBy(timeoftheday * 360 - 90);
+	light.rotateYZBy(sky->getSkyBodyOrbitTilt());
+
+	v3f sun_pos = light * offset_constant;
+
+	if (shadow->getDirectionalLightCount() == 0)
+		shadow->addDirectionalLight();
+	shadow->getDirectionalLight().setDirection(sun_pos);
+	shadow->setTimeOfDay(in_timeofday);
+
+	shadow->getDirectionalLight().update_frustum(camera, client, m_camera_offset_changed);
+}
 
 /****************************************************************************
  Misc
@@ -4018,7 +4117,7 @@ inline void Game::limitFps(FpsControl *fps_timings, f32 *dtime)
 void Game::showOverlayMessage(const char *msg, float dtime, int percent, bool draw_clouds)
 {
 	const wchar_t *wmsg = wgettext(msg);
-	RenderingEngine::draw_load_screen(wmsg, guienv, texture_src, dtime, percent,
+	m_rendering_engine->draw_load_screen(wmsg, guienv, texture_src, dtime, percent,
 		draw_clouds);
 	delete[] wmsg;
 }
@@ -4063,27 +4162,6 @@ void Game::readSettings()
  ****************************************************************************/
 /****************************************************************************/
 
-void Game::extendedResourceCleanup()
-{
-	// Extended resource accounting
-	infostream << "Irrlicht resources after cleanup:" << std::endl;
-	infostream << "\tRemaining meshes   : "
-	           << RenderingEngine::get_mesh_cache()->getMeshCount() << std::endl;
-	infostream << "\tRemaining textures : "
-	           << driver->getTextureCount() << std::endl;
-
-	for (unsigned int i = 0; i < driver->getTextureCount(); i++) {
-		irr::video::ITexture *texture = driver->getTextureByIndex(i);
-		infostream << "\t\t" << i << ":" << texture->getName().getPath().c_str()
-		           << std::endl;
-	}
-
-	clearTextureNameCache();
-	infostream << "\tRemaining materials: "
-               << driver-> getMaterialRendererCount()
-		       << " (note: irrlicht doesn't support removing renderers)" << std::endl;
-}
-
 void Game::showDeathFormspec()
 {
 	static std::string formspec_str =
@@ -4101,15 +4179,15 @@ void Game::showDeathFormspec()
 	LocalFormspecHandler *txt_dst = new LocalFormspecHandler("MT_DEATH_SCREEN", client);
 
 	auto *&formspec = m_game_ui->getFormspecGUI();
-	GUIFormSpecMenu::create(formspec, client, &input->joystick,
-		fs_src, txt_dst, client->getFormspecPrepend(), sound);
+	GUIFormSpecMenu::create(formspec, client, m_rendering_engine->get_gui_env(),
+		&input->joystick, fs_src, txt_dst, client->getFormspecPrepend(), sound);
 	formspec->setFocus("btn_respawn");
 }
 
 #define GET_KEY_NAME(KEY) gettext(getKeySetting(#KEY).name())
 void Game::showPauseMenu()
 {
-#ifdef __ANDROID__
+#ifdef HAVE_TOUCHSCREENGUI
 	static const std::string control_text = strgettext("Default Controls:\n"
 		"No menu visible:\n"
 		"- single tap: button activate\n"
@@ -4235,8 +4313,8 @@ void Game::showPauseMenu()
 	LocalFormspecHandler *txt_dst = new LocalFormspecHandler("MT_PAUSE_MENU");
 
 	auto *&formspec = m_game_ui->getFormspecGUI();
-	GUIFormSpecMenu::create(formspec, client, &input->joystick,
-			fs_src, txt_dst, client->getFormspecPrepend(), sound);
+	GUIFormSpecMenu::create(formspec, client, m_rendering_engine->get_gui_env(),
+			&input->joystick, fs_src, txt_dst, client->getFormspecPrepend(), sound);
 	formspec->setFocus("btn_continue");
 	formspec->doPause = true;
 
@@ -4252,6 +4330,7 @@ void Game::showPauseMenu()
 
 void the_game(bool *kill,
 		InputHandler *input,
+		RenderingEngine *rendering_engine,
 		const GameStartData &start_data,
 		std::string &error_message,
 		ChatBackend &chat_backend,
@@ -4266,8 +4345,8 @@ void the_game(bool *kill,
 
 	try {
 
-		if (game.startup(kill, input, start_data, error_message,
-				reconnect_requested, &chat_backend)) {
+		if (game.startup(kill, input, rendering_engine, start_data,
+				error_message, reconnect_requested, &chat_backend)) {
 			game.run();
 		}
 

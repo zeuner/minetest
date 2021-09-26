@@ -34,15 +34,6 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "guiscalingfilter.h"
 #include "renderingengine.h"
 
-
-#if ENABLE_GLES
-#ifdef _IRR_COMPILE_WITH_OGLES1_
-#include <GLES/gl.h>
-#else
-#include <GLES2/gl2.h>
-#endif
-#endif
-
 /*
 	A cache from texture name to texture path
 */
@@ -90,12 +81,8 @@ static bool replace_ext(std::string &path, const char *ext)
 std::string getImagePath(std::string path)
 {
 	// A NULL-ended list of possible image extensions
-	const char *extensions[] = {
-		"png", "jpg", "bmp", "tga",
-		"pcx", "ppm", "psd", "wal", "rgb",
-		NULL
-	};
-	// If there is no extension, add one
+	const char *extensions[] = { "png", "jpg", "bmp", "tga", NULL };
+	// If there is no extension, assume PNG
 	if (removeStringEnd(path, extensions).empty())
 		path = path + ".png";
 	// Check paths until something is found to exist
@@ -775,6 +762,9 @@ void TextureSource::rebuildImagesAndTextures()
 
 	// Recreate textures
 	for (TextureInfo &ti : m_textureinfo_cache) {
+		if (ti.name.empty())
+			continue; // Skip dummy entry
+
 		video::IImage *img = generateImage(ti.name);
 #if ENABLE_GLES
 		img = Align2Npot2(img, driver);
@@ -1013,42 +1003,19 @@ video::IImage* TextureSource::generateImage(const std::string &name)
 
 #if ENABLE_GLES
 
-
-static inline u16 get_GL_major_version()
-{
-	const GLubyte *gl_version = glGetString(GL_VERSION);
-	return (u16) (gl_version[0] - '0');
-}
-
-/**
- * Check if hardware requires npot2 aligned textures
- * @return true if alignment NOT(!) requires, false otherwise
- */
-
-bool hasNPotSupport()
-{
-	// Only GLES2 is trusted to correctly report npot support
-	// Note: we cache the boolean result, the GL context will never change.
-	static const bool supported = get_GL_major_version() > 1 &&
-		glGetString(GL_EXTENSIONS) &&
-		strstr((char *)glGetString(GL_EXTENSIONS), "GL_OES_texture_npot");
-	return supported;
-}
-
 /**
  * Check and align image to npot2 if required by hardware
  * @param image image to check for npot2 alignment
  * @param driver driver to use for image operations
  * @return image or copy of image aligned to npot2
  */
-
-video::IImage * Align2Npot2(video::IImage * image,
-		video::IVideoDriver* driver)
+video::IImage *Align2Npot2(video::IImage *image,
+		video::IVideoDriver *driver)
 {
 	if (image == NULL)
 		return image;
 
-	if (hasNPotSupport())
+	if (driver->queryFeature(video::EVDF_TEXTURE_NPOT))
 		return image;
 
 	core::dimension2d<u32> dim = image->getDimension();

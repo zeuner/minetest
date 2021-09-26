@@ -21,6 +21,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "util/string.h"
 #include <iostream>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <cerrno>
 #include <fstream>
@@ -36,6 +37,7 @@ namespace fs
 #define _WIN32_WINNT 0x0501
 #include <windows.h>
 #include <shlwapi.h>
+#include <io.h>
 
 std::vector<DirListNode> GetDirListing(const std::string &pathstring)
 {
@@ -176,13 +178,27 @@ std::string TempPath()
 		errorstream<<"GetTempPath failed, error = "<<GetLastError()<<std::endl;
 		return "";
 	}
-	std::vector<char> buf(bufsize);
+	std::string buf;
+	buf.resize(bufsize);
 	DWORD len = GetTempPath(bufsize, &buf[0]);
 	if(len == 0 || len > bufsize){
 		errorstream<<"GetTempPath failed, error = "<<GetLastError()<<std::endl;
 		return "";
 	}
-	return std::string(buf.begin(), buf.begin() + len);
+	buf.resize(len);
+	return buf;
+}
+
+std::string CreateTempFile()
+{
+	std::string path = TempPath() + DIR_DELIM "MT_XXXXXX";
+	_mktemp_s(&path[0], path.size() + 1); // modifies path
+	HANDLE file = CreateFile(path.c_str(), GENERIC_WRITE, 0, nullptr,
+		CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+	if (file == INVALID_HANDLE_VALUE)
+		return "";
+	CloseHandle(file);
+	return path;
 }
 
 #else // POSIX
@@ -362,6 +378,16 @@ std::string TempPath()
 #else
 	return DIR_DELIM "tmp";
 #endif
+}
+
+std::string CreateTempFile()
+{
+	std::string path = TempPath() + DIR_DELIM "MT_XXXXXX";
+	int fd = mkstemp(&path[0]); // modifies path
+	if (fd == -1)
+		return "";
+	close(fd);
+	return path;
 }
 
 #endif
@@ -724,6 +750,70 @@ bool safeWriteToFile(const std::string &path, const std::string &content)
 		return false;
 	}
 
+	return true;
+}
+
+bool extractZipFile(io::IFileSystem *fs, const char *filename, const std::string &destination)
+{
+	if (!fs->addFileArchive(filename, false, false, io::EFAT_ZIP)) {
+		return false;
+	}
+
+	sanity_check(fs->getFileArchiveCount() > 0);
+
+	/**********************************************************************/
+	/* WARNING this is not threadsafe!!                                   */
+	/**********************************************************************/
+	io::IFileArchive* opened_zip = fs->getFileArchive(fs->getFileArchiveCount() - 1);
+
+	const io::IFileList* files_in_zip = opened_zip->getFileList();
+
+	unsigned int number_of_files = files_in_zip->getFileCount();
+
+	for (unsigned int i=0; i < number_of_files; i++) {
+		std::string fullpath = destination;
+		fullpath += DIR_DELIM;
+		fullpath += files_in_zip->getFullFileName(i).c_str();
+		std::string fullpath_dir = fs::RemoveLastPathComponent(fullpath);
+
+		if (!files_in_zip->isDirectory(i)) {
+			if (!fs::PathExists(fullpath_dir) && !fs::CreateAllDirs(fullpath_dir)) {
+				fs->removeFileArchive(fs->getFileArchiveCount()-1);
+				return false;
+			}
+
+			io::IReadFile* toread = opened_zip->createAndOpenFile(i);
+
+			FILE *targetfile = fopen(fullpath.c_str(),"wb");
+
+			if (targetfile == NULL) {
+				fs->removeFileArchive(fs->getFileArchiveCount()-1);
+				return false;
+			}
+
+			char read_buffer[1024];
+			long total_read = 0;
+
+			while (total_read < toread->getSize()) {
+
+				unsigned int bytes_read =
+						toread->read(read_buffer,sizeof(read_buffer));
+				if ((bytes_read == 0 ) ||
+					(fwrite(read_buffer, 1, bytes_read, targetfile) != bytes_read))
+				{
+					fclose(targetfile);
+					fs->removeFileArchive(fs->getFileArchiveCount() - 1);
+					return false;
+				}
+				total_read += bytes_read;
+			}
+
+			fclose(targetfile);
+		}
+
+	}
+
+	fs->removeFileArchive(fs->getFileArchiveCount() - 1);
 	return true;
 }
 

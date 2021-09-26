@@ -21,6 +21,7 @@ Player @1 does not exist.=Il giocatore @1 non esiste.
 Return list of all online players with privilege=Ritorna una lista di tutti i giocatori connessi col tale privilegio
 Invalid parameters (see /help haspriv).=Parametri non validi (vedi /help haspriv).
 Unknown privilege!=Privilegio sconosciuto!
+No online player has the "@1" privilege.=
 Players online with the "@1" privilege: @2=Giocatori connessi con il privilegio "@1": @2
 Your privileges are insufficient.=I tuoi privilegi sono insufficienti.
 Your privileges are insufficient. '@1' only allows you to grant: @2=
@@ -87,6 +88,7 @@ Resets lighting in the area between pos1 and pos2 (<pos1> and <pos2> must be in 
 Successfully reset light in the area ranging from @1 to @2.=Luce nell'area tra @1 e @2 reimpostata con successo.
 Failed to load one or more blocks in area.=Errore nel caricare uno o più blocchi mappa nell'area.
 List mods installed on the server=Elenca le mod installate nel server
+No mods installed.=
 Cannot give an empty item.=Impossibile dare un oggetto vuoto.
 Cannot give an unknown item.=Impossibile dare un oggetto sconosciuto.
 Giving 'ignore' is not allowed.=Non è permesso dare 'ignore'.
@@ -143,8 +145,8 @@ Invalid hour (must be between 0 and 23 inclusive).=Ora non valida (deve essere t
 Invalid minute (must be between 0 and 59 inclusive).=Minuto non valido (deve essere tra 0 e 59 inclusi)
 Show day count since world creation=Mostra il conteggio dei giorni da quando il mondo è stato creato
 Current day is @1.=Giorno attuale: @1.
-[<delay_in_seconds> | -1] [reconnect] [<message>]=[<ritardo_in_secondi> | -1] [reconnect] [<messaggio>]
-Shutdown server (-1 cancels a delayed shutdown)=Arresta il server (-1 annulla un arresto programmato)
+[<delay_in_seconds> | -1] [-r] [<message>]=
+Shutdown server (-1 cancels a delayed shutdown, -r allows players to reconnect)=
 Server shutting down (operator request).=Arresto del server in corso (per richiesta dell'operatore)
 Ban the IP of a player or show the ban list=Bandisce l'IP del giocatore o mostra la lista di quelli banditi
 The ban list is empty.=La lista banditi è vuota.
@@ -228,7 +230,8 @@ Can use fly mode=Si può usare la modalità volo
 Can use fast mode=Si può usare la modalità rapida
 Can fly through solid nodes using noclip mode=Si può volare attraverso i nodi solidi con la modalità incorporea
 Can use the rollback functionality=Si può usare la funzione di rollback
-Allows enabling various debug options that may affect gameplay=Permette di abilitare varie opzioni di debug che potrebbero influenzare l'esperienza di gioco
+Can view more debug info that might give a gameplay advantage=
+Can enable wireframe=
 Unknown Item=Oggetto sconosciuto
 Air=Aria
 Ignore=Ignora
@@ -242,6 +245,9 @@ Profile saved to @1=
 
 ##### not used anymore #####
 
+Allows enabling various debug options that may affect gameplay=Permette di abilitare varie opzioni di debug che potrebbero influenzare l'esperienza di gioco
+[<delay_in_seconds> | -1] [reconnect] [<message>]=[<ritardo_in_secondi> | -1] [reconnect] [<messaggio>]
+Shutdown server (-1 cancels a delayed shutdown)=Arresta il server (-1 annulla un arresto programmato)
 <name> (<privilege> | all)=<nome> (<privilegio> | all)
 <privilege> | all=<privilegio> | all
 Can modify 'shout' and 'interact' privileges=Si possono modificare i privilegi 'shout' e 'interact'
