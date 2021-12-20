@@ -560,11 +560,6 @@ u32 InventoryList::getUsedSlots() const
 	return num;
 }
 
-u32 InventoryList::getFreeSlots() const
-{
-	return getSize() - getUsedSlots();
-}
-
 const ItemStack& InventoryList::getItem(u32 i) const
 {
 	assert(i < m_size); // Pre-condition
@@ -995,7 +990,7 @@ const InventoryList *Inventory::getList(const std::string &name) const
 	return m_lists[i];
 }
 
-const s32 Inventory::getListIndex(const std::string &name) const
+s32 Inventory::getListIndex(const std::string &name) const
 {
 	for(u32 i=0; i<m_lists.size(); i++)
 	{

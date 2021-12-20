@@ -278,10 +278,12 @@ if(WIN32)
 	endif()
 	set(PLATFORM_LIBS ws2_32.lib version.lib shlwapi.lib ${PLATFORM_LIBS})
 
+	set(EXTRA_DLL "" CACHE FILEPATH "Optional paths to additional DLLs that should be packaged")
+
 	# DLLs are automatically copied to the output directory by vcpkg when VCPKG_APPLOCAL_DEPS=ON
 	if(NOT VCPKG_APPLOCAL_DEPS)
-		find_file(ZLIB_DLL NAMES "" DOC "Path to Zlib DLL for installation (optional)")
-		find_file(ZSTD_DLL NAMES "" DOC "Path to Zstd DLL for installation (optional)")
+		set(ZLIB_DLL "" CACHE FILEPATH "Path to Zlib DLL for installation (optional)")
+		set(ZSTD_DLL "" CACHE FILEPATH "Path to Zstd DLL for installation (optional)")
 		if(ENABLE_SOUND)
 			set(OPENAL_DLL "" CACHE FILEPATH "Path to OpenAL32.dll for installation (optional)")
 			set(OGG_DLL "" CACHE FILEPATH "Path to libogg.dll for installation (optional)")
@@ -294,7 +296,6 @@ if(WIN32)
 			set(LUA_DLL "" CACHE FILEPATH "Path to luajit-5.1.dll for installation (optional)")
 		endif()
 	endif()
-
 else()
 	# Unix probably
 	if(BUILD_CLIENT)
@@ -499,6 +500,7 @@ include_directories(
 	${LUA_INCLUDE_DIR}
 	${GMP_INCLUDE_DIR}
 	${JSON_INCLUDE_DIR}
+	${LUA_BIT_INCLUDE_DIR}
 	${X11_INCLUDE_DIR}
 	${PROJECT_SOURCE_DIR}/script
 )
@@ -536,6 +538,7 @@ if(BUILD_CLIENT)
 		${LUA_LIBRARY}
 		${GMP_LIBRARY}
 		${JSON_LIBRARY}
+		${LUA_BIT_LIBRARY}
 		${PLATFORM_LIBS}
 	)
 	if(NOT USE_LUAJIT)
@@ -618,6 +621,7 @@ if(BUILD_SERVER)
 		${SQLITE3_LIBRARY}
 		${JSON_LIBRARY}
 		${LUA_LIBRARY}
+		${LUA_BIT_LIBRARY}
 		${GMP_LIBRARY}
 		${PLATFORM_LIBS}
 	)
@@ -794,6 +798,9 @@ endif()
 # Installation
 
 if(WIN32)
+	if(EXTRA_DLL)
+		install(FILES ${EXTRA_DLL} DESTINATION ${BINDIR})
+	endif()
 	if(VCPKG_APPLOCAL_DEPS)
 		# Collect the dll's from the output path
 		install(DIRECTORY ${EXECUTABLE_OUTPUT_PATH}/Release/

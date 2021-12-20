@@ -517,9 +517,7 @@ void Server::stop()
 
 	// Stop threads (set run=false first so both start stopping)
 	m_thread->stop();
-	//m_emergethread.setRun(false);
 	m_thread->wait();
-	//m_emergethread.stop();
 
 	infostream<<"Server: Threads stopped"<<std::endl;
 }
@@ -954,14 +952,14 @@ void Server::AsyncRunStep(bool initial_step)
 	}
 
 	/*
-		Trigger emergethread (it somehow gets to a non-triggered but
-		bysy state sometimes)
+		Trigger emerge thread
+		Doing this every 2s is left over from old code, unclear if this is still needed.
 	*/
 	{
 		float &counter = m_emergethread_trigger_timer;
-		counter += dtime;
-		if (counter >= 2.0) {
-			counter = 0.0;
+		counter -= dtime;
+		if (counter <= 0.0f) {
+			counter = 2.0f;
 
 			m_emerge->startThreads();
 		}
@@ -3119,15 +3117,16 @@ std::string Server::getStatusString()
 	std::ostringstream os(std::ios_base::binary);
 	os << "# Server: ";
 	// Version
-	os << "version=" << g_version_string;
+	os << "version: " << g_version_string;
 	// Uptime
-	os << ", uptime=" << m_uptime_counter->get();
+	os << " | uptime: " << duration_to_string((int) m_uptime_counter->get());
 	// Max lag estimate
-	os << ", max_lag=" << (m_env ? m_env->getMaxLagEstimate() : 0);
+	os << " | max lag: " << std::setprecision(3);
+	os << (m_env ? m_env->getMaxLagEstimate() : 0) << "s";
 
 	// Information about clients
 	bool first = true;
-	os << ", clients={";
+	os << " | clients: ";
 	if (m_env) {
 		std::vector<session_t> clients = m_clients.getClientIDs();
 		for (session_t client_id : clients) {
@@ -3144,7 +3143,6 @@ std::string Server::getStatusString()
 			os << name;
 		}
 	}
-	os << "}";
 
 	if (m_env && !((ServerMap*)(&m_env->getMap()))->isSavingEnabled())
 		os << std::endl << "# Server: " << " WARNING: Map saving is disabled.";

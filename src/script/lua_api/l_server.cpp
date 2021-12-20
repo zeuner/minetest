@@ -57,6 +57,17 @@ int ModApiServer::l_get_server_uptime(lua_State *L)
 	return 1;
 }
 
+// get_server_max_lag()
+int ModApiServer::l_get_server_max_lag(lua_State *L)
+{
+	NO_MAP_LOCK_REQUIRED;
+	ServerEnvironment *s_env = dynamic_cast<ServerEnvironment *>(getEnv(L));
+	if (!s_env)
+		lua_pushnil(L);
+	else
+		lua_pushnumber(L, s_env->getMaxLagEstimate());
+	return 1;
+}
 
 // print(text)
 int ModApiServer::l_print(lua_State *L)
@@ -282,8 +293,10 @@ int ModApiServer::l_ban_player(lua_State *L)
 {
 	NO_MAP_LOCK_REQUIRED;
 
-	Server *server = getServer(L);
+	if (!getEnv(L))
+		throw LuaError("Can't ban player before server has started up");
 
+	Server *server = getServer(L);
 	const char *name = luaL_checkstring(L, 1);
 	RemotePlayer *player = server->getEnv().getPlayer(name);
 	if (!player) {
@@ -297,16 +310,20 @@ int ModApiServer::l_ban_player(lua_State *L)
 	return 1;
 }
 
-// kick_player(name, [reason]) -> success
-int ModApiServer::l_kick_player(lua_State *L)
+// disconnect_player(name, [reason]) -> success
+int ModApiServer::l_disconnect_player(lua_State *L)
 {
 	NO_MAP_LOCK_REQUIRED;
+
+	if (!getEnv(L))
+		throw LuaError("Can't kick player before server has started up");
+
 	const char *name = luaL_checkstring(L, 1);
-	std::string message("Kicked");
+	std::string message;
 	if (lua_isstring(L, 2))
-		message.append(": ").append(readParam<std::string>(L, 2));
+		message.append(readParam<std::string>(L, 2));
 	else
-		message.append(".");
+		message.append("Disconnected.");
 
 	RemotePlayer *player = dynamic_cast<ServerEnvironment *>(getEnv(L))->getPlayer(name);
 	if (player == NULL) {
@@ -323,7 +340,8 @@ int ModApiServer::l_remove_player(lua_State *L)
 	NO_MAP_LOCK_REQUIRED;
 	std::string name = luaL_checkstring(L, 1);
 	ServerEnvironment *s_env = dynamic_cast<ServerEnvironment *>(getEnv(L));
-	assert(s_env);
+	if (!s_env)
+		throw LuaError("Can't remove player before server has started up");
 
 	RemotePlayer *player = s_env->getPlayer(name.c_str());
 	if (!player)
@@ -478,7 +496,7 @@ int ModApiServer::l_dynamic_add_media(lua_State *L)
 
 	CHECK_SECURE_PATH(L, filepath.c_str(), false);
 
-	u32 token = server->getScriptIface()->allocateDynamicMediaCallback(2);
+	u32 token = server->getScriptIface()->allocateDynamicMediaCallback(L, 2);
 
 	bool ok = server->dynamicAddMedia(filepath, token, to_player, ephemeral);
 	if (!ok)
@@ -512,6 +530,7 @@ void ModApiServer::Initialize(lua_State *L, int top)
 	API_FCT(request_shutdown);
 	API_FCT(get_server_status);
 	API_FCT(get_server_uptime);
+	API_FCT(get_server_max_lag);
 	API_FCT(get_worldpath);
 	API_FCT(is_singleplayer);
 
@@ -535,7 +554,7 @@ void ModApiServer::Initialize(lua_State *L, int top)
 	API_FCT(get_ban_list);
 	API_FCT(get_ban_description);
 	API_FCT(ban_player);
-	API_FCT(kick_player);
+	API_FCT(disconnect_player);
 	API_FCT(remove_player);
 	API_FCT(unban_player_or_ip);
 	API_FCT(notify_authentication_modified);
