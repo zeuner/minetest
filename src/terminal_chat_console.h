@@ -1,43 +1,32 @@
-/*
-Minetest
-Copyright (C) 2015 est31 <MTest31@outlook.com>
+// Luanti
+// SPDX-License-Identifier: LGPL-2.1-or-later
+// Copyright (C) 2015 est31 <MTest31@outlook.com>
 
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU Lesser General Public License as published by
-the Free Software Foundation; either version 2.1 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Lesser General Public License for more details.
-
-You should have received a copy of the GNU Lesser General Public License along
-with this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
-*/
-
-#ifndef TERMINAL_CHAT_CONSOLE_H
-#define TERMINAL_CHAT_CONSOLE_H
+#pragma once
 
 #include "chat.h"
 #include "threading/thread.h"
-#include "chat_interface.h"
-#include "log.h"
+#include "util/container.h"
+#include "log_internal.h"
 
+#include <csignal>
+#include <set>
 #include <sstream>
+
+
+struct ChatInterface;
 
 class TermLogOutput : public ILogOutput {
 public:
 
-	void logRaw(LogLevel lev, const std::string &line)
+	void logRaw(LogLevel lev, std::string_view line)
 	{
-		queue.push_back(std::make_pair(lev, line));
+		queue.push_back(std::make_pair(lev, std::string(line)));
 	}
 
 	virtual void log(LogLevel lev, const std::string &combined,
 		const std::string &time, const std::string &thread_name,
-		const std::string &payload_text)
+		std::string_view payload_text)
 	{
 		std::ostringstream os(std::ios_base::binary);
 		os << time << ": [" << thread_name << "] " << payload_text;
@@ -52,18 +41,12 @@ class TerminalChatConsole : public Thread {
 public:
 
 	TerminalChatConsole() :
-		Thread("TerminalThread"),
-		m_log_level(LL_ACTION),
-		m_utf8_bytes_to_wait(0),
-		m_kill_requested(NULL),
-		m_esc_mode(false),
-		m_game_time(0),
-		m_time_of_day(0)
+		Thread("TerminalThread")
 	{}
 
 	void setup(
 		ChatInterface *iface,
-		bool *kill_requested,
+		volatile std::sig_atomic_t *kill_requested,
 		const std::string &nick)
 	{
 		m_nick = nick;
@@ -74,7 +57,7 @@ public:
 	virtual void *run();
 
 	// Highly required!
-	void clearKillStatus() { m_kill_requested = NULL; }
+	void clearKillStatus() { m_kill_requested = nullptr; }
 
 	void stopAndWaitforThread();
 
@@ -102,30 +85,28 @@ private:
 		~CursesInitHelper() { cons->deInitOfCurses(); }
 	};
 
-	int m_log_level;
+	int m_log_level = LL_ACTION;
 	std::string m_nick;
 
-	u8 m_utf8_bytes_to_wait;
+	u8 m_utf8_bytes_to_wait = 0;
 	std::string m_pending_utf8_bytes;
 
-	std::list<std::string> m_nicks;
+	std::set<std::string> m_nicks;
 
 	int m_cols;
 	int m_rows;
 	bool m_can_draw_text;
 
-	bool *m_kill_requested;
-	ChatBackend m_chat_backend;
-	ChatInterface *m_chat_interface;
+	volatile std::sig_atomic_t *m_kill_requested = nullptr;
+	ChatBackend                 m_chat_backend;
+	ChatInterface              *m_chat_interface;
 
 	TermLogOutput m_log_output;
 
-	bool m_esc_mode;
+	bool m_esc_mode = false;
 
-	u64 m_game_time;
-	u32 m_time_of_day;
+	u64 m_game_time = 0;
+	u32 m_time_of_day = 0;
 };
 
 extern TerminalChatConsole g_term_console;
-
-#endif

@@ -1,149 +1,42 @@
-/*
-Minetest
-Copyright (C) 2010-2017 celeron55, Perttu Ahola <celeron55@gmail.com>
+// Luanti
+// SPDX-License-Identifier: LGPL-2.1-or-later
+// Copyright (C) 2010-2017 celeron55, Perttu Ahola <celeron55@gmail.com>
 
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU Lesser General Public License as published by
-the Free Software Foundation; either version 2.1 of the License, or
-(at your option) any later version.
+#pragma once
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Lesser General Public License for more details.
-
-You should have received a copy of the GNU Lesser General Public License along
-with this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
-*/
-
-#ifndef SERVER_ENVIRONMENT_HEADER
-#define SERVER_ENVIRONMENT_HEADER
+#include <memory> // std::unique_ptr
+#include <set>
+#include <unordered_map>
+#include <utility> // std::function
+#include <vector>
 
 #include "environment.h"
-#include "mapnode.h"
-#include "mapblock.h"
-#include <set>
+#include "util/guid.h"
+#include "map.h" // MapEventReceiver
+#include "server/activeobjectmgr.h"
+#include "server/blockmodifier.h"
+#include "util/numeric.h"
+#include "util/metricsbackend.h"
 
-class IGameDef;
-class ServerMap;
-class RemotePlayer;
+class AuthDatabase;
+class ActiveObject;
+class MetricsBackend;
+class PlayerDatabase;
 class PlayerSAO;
-class ServerEnvironment;
-class ActiveBlockModifier;
-class ServerActiveObject;
+class RemotePlayer;
 class Server;
+class ServerActiveObject;
+class ServerEnvironment;
 class ServerScripting;
+class Settings;
+struct ActiveObjectMessage;
+struct GameParams;
+struct StaticObject;
 
-/*
-	{Active, Loading} block modifier interface.
+class ServerMap;
 
-	These are fed into ServerEnvironment at initialization time;
-	ServerEnvironment handles deleting them.
-*/
-
-class ActiveBlockModifier
-{
-public:
-	ActiveBlockModifier(){};
-	virtual ~ActiveBlockModifier(){};
-
-	// Set of contents to trigger on
-	virtual std::set<std::string> getTriggerContents()=0;
-	// Set of required neighbors (trigger doesn't happen if none are found)
-	// Empty = do not check neighbors
-	virtual std::set<std::string> getRequiredNeighbors()
-	{ return std::set<std::string>(); }
-	// Trigger interval in seconds
-	virtual float getTriggerInterval() = 0;
-	// Random chance of (1 / return value), 0 is disallowed
-	virtual u32 getTriggerChance() = 0;
-	// Whether to modify chance to simulate time lost by an unnattended block
-	virtual bool getSimpleCatchUp() = 0;
-	// This is called usually at interval for 1/chance of the nodes
-	virtual void trigger(ServerEnvironment *env, v3s16 p, MapNode n){};
-	virtual void trigger(ServerEnvironment *env, v3s16 p, MapNode n,
-		u32 active_object_count, u32 active_object_count_wider){};
-};
-
-struct ABMWithState
-{
-	ActiveBlockModifier *abm;
-	float timer;
-
-	ABMWithState(ActiveBlockModifier *abm_);
-};
-
-struct LoadingBlockModifierDef
-{
-	// Set of contents to trigger on
-	std::set<std::string> trigger_contents;
-	std::string name;
-	bool run_at_every_load;
-
-	virtual ~LoadingBlockModifierDef() {}
-	virtual void trigger(ServerEnvironment *env, v3s16 p, MapNode n){};
-};
-
-struct LBMContentMapping
-{
-	typedef std::map<content_t, std::vector<LoadingBlockModifierDef *> > container_map;
-	container_map map;
-
-	std::vector<LoadingBlockModifierDef *> lbm_list;
-
-	// Needs to be separate method (not inside destructor),
-	// because the LBMContentMapping may be copied and destructed
-	// many times during operation in the lbm_lookup_map.
-	void deleteContents();
-	void addLBM(LoadingBlockModifierDef *lbm_def, IGameDef *gamedef);
-	const std::vector<LoadingBlockModifierDef *> *lookup(content_t c) const;
-};
-
-class LBMManager
-{
-public:
-	LBMManager():
-		m_query_mode(false)
-	{}
-
-	~LBMManager();
-
-	// Don't call this after loadIntroductionTimes() ran.
-	void addLBMDef(LoadingBlockModifierDef *lbm_def);
-
-	void loadIntroductionTimes(const std::string &times,
-		IGameDef *gamedef, u32 now);
-
-	// Don't call this before loadIntroductionTimes() ran.
-	std::string createIntroductionTimesString();
-
-	// Don't call this before loadIntroductionTimes() ran.
-	void applyLBMs(ServerEnvironment *env, MapBlock *block, u32 stamp);
-
-	// Warning: do not make this std::unordered_map, order is relevant here
-	typedef std::map<u32, LBMContentMapping> lbm_lookup_map;
-
-private:
-	// Once we set this to true, we can only query,
-	// not modify
-	bool m_query_mode;
-
-	// For m_query_mode == false:
-	// The key of the map is the LBM def's name.
-	// TODO make this std::unordered_map
-	std::map<std::string, LoadingBlockModifierDef *> m_lbm_defs;
-
-	// For m_query_mode == true:
-	// The key of the map is the LBM def's first introduction time.
-	lbm_lookup_map m_lbm_lookup;
-
-	// Returns an iterator to the LBMs that were introduced
-	// after the given time. This is guaranteed to return
-	// valid values for everything
-	lbm_lookup_map::const_iterator getLBMsIntroducedAfter(u32 time)
-	{ return m_lbm_lookup.lower_bound(time); }
-};
+enum AccessDeniedCode : u8;
+typedef u16 session_t;
 
 /*
 	List of active blocks, used by ServerEnvironment
@@ -152,23 +45,56 @@ private:
 class ActiveBlockList
 {
 public:
-	void update(std::vector<v3s16> &active_positions,
-		s16 radius,
+	void update(std::vector<PlayerSAO*> &active_players,
+		s16 active_block_range,
+		s16 active_object_range,
 		std::set<v3s16> &blocks_removed,
-		std::set<v3s16> &blocks_added);
+		std::set<v3s16> &blocks_added,
+		std::set<v3s16> &extra_blocks_added);
 
-	bool contains(v3s16 p){
+	bool contains(v3s16 p) const {
 		return (m_list.find(p) != m_list.end());
 	}
 
-	void clear(){
+	auto size() const {
+		return m_list.size();
+	}
+
+	void clear() {
 		m_list.clear();
 	}
 
-	std::set<v3s16> m_list;
-	std::set<v3s16> m_forceloaded_list;
+	/// @return true if block was newly added
+	bool add(v3s16 p) {
+		if (m_list.insert(p).second) {
+			m_abm_list.insert(p);
+			return true;
+		}
+		return false;
+	}
 
-private:
+	void remove(v3s16 p) {
+		m_list.erase(p);
+		m_abm_list.erase(p);
+	}
+
+	// list of all active blocks
+	std::set<v3s16> m_list;
+	// list of blocks for ABM processing
+	// subset of `m_list` that does not contain view cone affected blocks
+	std::set<v3s16> m_abm_list;
+	// list of blocks that are always active, not modified by this class
+	std::set<v3s16> m_forceloaded_list;
+};
+
+/*
+	ServerEnvironment::m_on_mapblocks_changed_receiver
+*/
+struct OnMapblocksChangedReceiver : public MapEventReceiver {
+	std::unordered_set<v3s16> modified_blocks;
+	bool receiving = false;
+
+	void onMapEditEvent(const MapEditEvent &event) override;
 };
 
 /*
@@ -183,20 +109,13 @@ enum ClearObjectsMode {
 		CLEAR_OBJECTS_MODE_QUICK,
 };
 
-/*
-	The server-side environment.
-
-	This is not thread-safe. Server uses an environment mutex.
-*/
-
-typedef UNORDERED_MAP<u16, ServerActiveObject *> ActiveObjectMap;
-
-class ServerEnvironment : public Environment
+class ServerEnvironment final : public Environment
 {
 public:
-	ServerEnvironment(ServerMap *map, ServerScripting *scriptIface,
-		Server *server, const std::string &path_world);
+	ServerEnvironment(std::unique_ptr<ServerMap> map, Server *server, MetricsBackend *mb);
 	~ServerEnvironment();
+
+	void init();
 
 	Map & getMap();
 
@@ -206,29 +125,28 @@ public:
 	ServerScripting* getScriptIface()
 	{ return m_script; }
 
-	Server *getGameDef()
+	Server *getServer()
 	{ return m_server; }
 
 	float getSendRecommendedInterval()
 	{ return m_recommended_send_interval; }
 
-	void kickAllPlayers(AccessDeniedCode reason,
-		const std::string &str_reason, bool reconnect);
+	GUIDGenerator & getGUIDGenerator()
+	{ return m_guid_generator; }
+
 	// Save players
-	void saveLoadedPlayers();
+	void saveLoadedPlayers(bool force = false);
 	void savePlayer(RemotePlayer *player);
-	RemotePlayer *loadPlayer(const std::string &playername, PlayerSAO *sao);
+	std::unique_ptr<PlayerSAO> loadPlayer(RemotePlayer *player, session_t peer_id);
 	void addPlayer(RemotePlayer *player);
 	void removePlayer(RemotePlayer *player);
+	bool removePlayerFromDatabase(const std::string &name);
 
 	/*
 		Save and load time of day and game timer
 	*/
 	void saveMeta();
 	void loadMeta();
-	// to be called instead of loadMeta if
-	// env_meta.txt doesn't exist (e.g. new world)
-	void loadDefaultMeta();
 
 	u32 addParticleSpawner(float exptime);
 	u32 addParticleSpawner(float exptime, u16 attached_id);
@@ -239,7 +157,10 @@ public:
 		-------------------------------------------
 	*/
 
-	ServerActiveObject* getActiveObject(u16 id);
+	ServerActiveObject* getActiveObject(u16 id)
+	{
+		return m_ao_manager.getActiveObject(id);
+	}
 
 	/*
 		Add an active object to the environment.
@@ -249,16 +170,9 @@ public:
 		Returns the id of the object.
 		Returns 0 if not added and thus deleted.
 	*/
-	u16 addActiveObject(ServerActiveObject *object);
+	u16 addActiveObject(std::unique_ptr<ServerActiveObject> object);
 
-	/*
-		Add an active object as a static object to the corresponding
-		MapBlock.
-		Caller allocates memory, ServerEnvironment frees memory.
-		Return value: true if succeeded, false if failed.
-		(note:  not used, pending removal from engine)
-	*/
-	//bool addActiveObjectAsStatic(ServerActiveObject *object);
+	void invalidateActiveObjectObserverCaches();
 
 	/*
 		Find out what new objects have been added to
@@ -266,8 +180,8 @@ public:
 	*/
 	void getAddedActiveObjects(PlayerSAO *playersao, s16 radius,
 		s16 player_radius,
-		std::set<u16> &current_objects,
-		std::queue<u16> &added_objects);
+		const std::set<u16> &current_objects,
+		std::vector<u16> &added_objects);
 
 	/*
 		Find out what new objects have been removed from
@@ -275,20 +189,26 @@ public:
 	*/
 	void getRemovedActiveObjects(PlayerSAO *playersao, s16 radius,
 		s16 player_radius,
-		std::set<u16> &current_objects,
-		std::queue<u16> &removed_objects);
+		const std::set<u16> &current_objects,
+		std::vector<std::pair<bool /* gone? */, u16>> &removed_objects);
 
 	/*
 		Get the next message emitted by some active object.
-		Returns a message with id=0 if no messages are available.
+		Returns false if no messages are available, true otherwise.
 	*/
-	ActiveObjectMessage getActiveObjectMessage();
+	bool getActiveObjectMessage(ActiveObjectMessage *dest);
+
+	virtual void getSelectedActiveObjects(
+		const core::line3d<f32> &shootline_on_map,
+		std::vector<PointedThing> &objects,
+		const std::optional<Pointabilities> &pointabilities
+	);
 
 	/*
-		Activate objects and dynamically modify for the dtime determined
-		from timestamp and additional_dtime
+		Force a block to become active. It will probably be deactivated
+		the next time active blocks are re-calculated.
 	*/
-	void activateBlock(MapBlock *block, u32 additional_dtime=0);
+	void forceActivateBlock(MapBlock *block);
 
 	/*
 		{Active,Loading}BlockModifiers
@@ -308,33 +228,86 @@ public:
 	bool removeNode(v3s16 p);
 	bool swapNode(v3s16 p, const MapNode &n);
 
+	// Find the daylight value at pos with a Depth First Search
+	u8 findSunlight(v3s16 pos) const;
+
+	void updateObjectPos(u16 id, v3f pos)
+	{
+		return m_ao_manager.updateObjectPos(id, pos);
+	}
+
 	// Find all active objects inside a radius around a point
-	void getObjectsInsideRadius(std::vector<u16> &objects, v3f pos, float radius);
+	void getObjectsInsideRadius(std::vector<ServerActiveObject *> &objects, const v3f &pos, float radius,
+			std::function<bool(ServerActiveObject *obj)> include_obj_cb)
+	{
+		return m_ao_manager.getObjectsInsideRadius(pos, radius, objects, include_obj_cb);
+	}
+
+	// Find all active objects inside a box
+	void getObjectsInArea(std::vector<ServerActiveObject *> &objects, const aabb3f &box,
+			std::function<bool(ServerActiveObject *obj)> include_obj_cb)
+	{
+		return m_ao_manager.getObjectsInArea(box, objects, include_obj_cb);
+	}
 
 	// Clear objects, loading and going through every MapBlock
 	void clearObjects(ClearObjectsMode mode);
 
+	// to be called before destructor
+	void deactivateBlocksAndObjects();
+
 	// This makes stuff happen
 	void step(f32 dtime);
-
-	//check if there's a line of sight between two positions
-	bool line_of_sight(v3f pos1, v3f pos2, float stepsize=1.0, v3s16 *p=NULL);
 
 	u32 getGameTime() const { return m_game_time; }
 
 	void reportMaxLagEstimate(float f) { m_max_lag_estimate = f; }
-	float getMaxLagEstimate() { return m_max_lag_estimate; }
+	float getMaxLagEstimate() const { return m_max_lag_estimate; }
 
-	std::set<v3s16>* getForceloadedBlocks() { return &m_active_blocks.m_forceloaded_list; };
+	std::set<v3s16>* getForceloadedBlocks() { return &m_active_blocks.m_forceloaded_list; }
+	const std::set<v3s16> &getActiveBlocks() const { return m_active_blocks.m_list; }
+
+	// Sorted by how ready a mapblock is
+	enum BlockStatus {
+		BS_UNKNOWN,
+		BS_EMERGING,
+		BS_LOADED,
+		BS_ACTIVE // always highest value
+	};
+	BlockStatus getBlockStatus(v3s16 blockpos);
 
 	// Sets the static object status all the active objects in the specified block
 	// This is only really needed for deleting blocks from the map
 	void setStaticForActiveObjectsInBlock(v3s16 blockpos,
 		bool static_exists, v3s16 static_block=v3s16(0,0,0));
 
-	RemotePlayer *getPlayer(const u16 peer_id);
-	RemotePlayer *getPlayer(const char* name);
+	RemotePlayer *getPlayer(const session_t peer_id);
+	RemotePlayer *getPlayer(const std::string &name, bool match_invalid_peer = false);
+	const std::vector<RemotePlayer *> getPlayers() const { return m_players; }
+	u32 getPlayerCount() const { return m_players.size(); }
+
+	static std::vector<std::string> getPlayerDatabaseBackends();
+	static bool migratePlayersDatabase(const GameParams &game_params,
+			const Settings &cmd_args);
+
+	AuthDatabase *getAuthDatabase() { return m_auth_database; }
+	static std::vector<std::string> getAuthDatabaseBackends();
+	static bool migrateAuthDatabase(const GameParams &game_params,
+			const Settings &cmd_args);
+
 private:
+
+	/**
+	 * called if env_meta.txt doesn't exist (e.g. new world)
+	 */
+	void loadDefaultMeta();
+
+	static PlayerDatabase *openPlayerDatabase(const std::string &name,
+			const std::string &savedir, const Settings &conf);
+	static AuthDatabase *openAuthDatabase(const std::string &name,
+			const std::string &savedir, const Settings &conf);
+
+	void activateBlock(MapBlock *block);
 
 	/*
 		Internal ActiveObject interface
@@ -351,10 +324,14 @@ private:
 		Returns the id of the object.
 		Returns 0 if not added and thus deleted.
 	*/
-	u16 addActiveObjectRaw(ServerActiveObject *object, bool set_changed, u32 dtime_s);
+	u16 addActiveObjectRaw(std::unique_ptr<ServerActiveObject> object,
+			const StaticObject *from_static, u32 dtime_s);
 
 	/*
-		Remove all objects that satisfy (m_removed && m_known_by_count==0)
+		Remove all objects that satisfy (isGone() && m_known_by_count==0)
+
+		WARNING: only safe to call if you can ensure that no code is left holding
+		pointers to any SAO.
 	*/
 	void removeRemovedObjects();
 
@@ -371,58 +348,99 @@ private:
 
 		If force_delete is set, active object is deleted nevertheless. It
 		shall only be set so in the destructor of the environment.
+
+		WARNING: only safe to call if you can ensure that no code is left holding
+		pointers to any SAO.
 	*/
 	void deactivateFarObjects(bool force_delete);
+
+	/*
+		A few helpers used by the three above methods
+	*/
+	void deleteStaticFromBlock(
+			ServerActiveObject *obj, u16 id, u32 mod_reason, bool no_emerge);
+	bool saveStaticToBlock(v3s16 blockpos, u16 store_id,
+			ServerActiveObject *obj, const StaticObject &s_obj, u32 mod_reason);
+
+	// Moves static data from active list to stored list
+	void finishDeactivation(ServerActiveObject *obj, u16 id);
+
+	void processActiveObjectRemove(ServerActiveObject *obj);
 
 	/*
 		Member variables
 	*/
 
 	// The map
-	ServerMap *m_map;
+	std::unique_ptr<ServerMap> m_map;
 	// Lua state
-	ServerScripting* m_script;
+	ServerScripting *m_script = nullptr;
 	// Server definition
-	Server *m_server;
-	// World path
-	const std::string m_path_world;
-	// Active object list
-	ActiveObjectMap m_active_objects;
+	Server *m_server = nullptr;
+	// Active Object Manager
+	server::ActiveObjectMgr m_ao_manager;
+	// on_mapblocks_changed map event receiver
+	OnMapblocksChangedReceiver m_on_mapblocks_changed_receiver;
+	GUIDGenerator m_guid_generator;
 	// Outgoing network message buffer for active objects
 	std::queue<ActiveObjectMessage> m_active_object_messages;
 	// Some timers
-	float m_send_recommended_timer;
+	float m_send_recommended_timer = 0.0f;
 	IntervalLimiter m_object_management_interval;
 	// List of active blocks
 	ActiveBlockList m_active_blocks;
-	IntervalLimiter m_active_blocks_management_interval;
+	int m_fast_active_block_divider = 1;
+	IntervalLimiter m_active_blocks_mgmt_interval;
 	IntervalLimiter m_active_block_modifier_interval;
 	IntervalLimiter m_active_blocks_nodemetadata_interval;
-	int m_active_block_interval_overload_skip;
+	// Whether the variables below have been read from file yet
+	bool m_meta_loaded = false;
+	// Are we shutting down?
+	bool m_shutting_down = false;
 	// Time from the beginning of the game in seconds.
 	// Incremented in step().
-	u32 m_game_time;
+	u32 m_game_time = 0;
 	// A helper variable for incrementing the latter
-	float m_game_time_fraction_counter;
+	float m_game_time_fraction_counter = 0.0f;
 	// Time of last clearObjects call (game time).
 	// When a mapblock older than this is loaded, its objects are cleared.
-	u32 m_last_clear_objects_time;
+	u32 m_last_clear_objects_time = 0;
 	// Active block modifiers
 	std::vector<ABMWithState> m_abms;
 	LBMManager m_lbm_mgr;
 	// An interval for generally sending object positions and stuff
-	float m_recommended_send_interval;
+	float m_recommended_send_interval = 0.1f;
 	// Estimate for general maximum lag as determined by server.
 	// Can raise to high values like 15s with eg. map generation mods.
-	float m_max_lag_estimate;
+	float m_max_lag_estimate = 0.1f;
+
+
+	/*
+	 * TODO: Add a callback function so these can be updated when a setting
+	 *       changes.
+	 */
+	float m_cache_active_block_mgmt_interval;
+	float m_cache_abm_interval;
+	float m_cache_nodetimer_interval;
+	float m_cache_abm_time_budget;
 
 	// peer_ids in here should be unique, except that there may be many 0s
 	std::vector<RemotePlayer*> m_players;
 
+	PlayerDatabase *m_player_database = nullptr;
+	AuthDatabase *m_auth_database = nullptr;
+
 	// Particles
 	IntervalLimiter m_particle_management_interval;
-	UNORDERED_MAP<u32, float> m_particle_spawners;
-	UNORDERED_MAP<u32, u16> m_particle_spawner_attachments;
-};
+	std::unordered_map<u32, float> m_particle_spawners;
+	u32 m_particle_spawners_id_last_used = 0;
+	std::unordered_map<u32, u16> m_particle_spawner_attachments;
 
-#endif
+	// Environment metrics
+	MetricCounterPtr m_step_time_counter;
+	MetricGaugePtr m_active_block_gauge;
+	MetricGaugePtr m_active_object_gauge;
+
+	std::unique_ptr<ServerActiveObject> createSAO(ActiveObjectType type, v3f pos,
+			const std::string &data);
+};

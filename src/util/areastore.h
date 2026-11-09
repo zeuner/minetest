@@ -1,29 +1,11 @@
-/*
-Minetest
-Copyright (C) 2015 est31 <mtest31@outlook.com>
+// Luanti
+// SPDX-License-Identifier: LGPL-2.1-or-later
+// Copyright (C) 2015 est31 <mtest31@outlook.com>
 
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU Lesser General Public License as published by
-the Free Software Foundation; either version 2.1 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Lesser General Public License for more details.
-
-You should have received a copy of the GNU Lesser General Public License along
-with this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
-*/
-
-#ifndef AREA_STORE_H_
-#define AREA_STORE_H_
+#pragma once
 
 #include "irr_v3d.h"
-#include "noise.h" // for PcgRandom
 #include <map>
-#include <list>
 #include <vector>
 #include <istream>
 #include "util/container.h"
@@ -33,14 +15,14 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #endif
 #if USE_SPATIAL
 	#include <spatialindex/SpatialIndex.h>
-	#include "util/serialize.h"
 #endif
 
 
 struct Area {
-	Area() : id(U32_MAX) {}
-	Area(const v3s16 &mine, const v3s16 &maxe) :
-		id(U32_MAX), minedge(mine), maxedge(maxe)
+	Area(u32 area_id) : id(area_id) {}
+
+	Area(const v3s16 &mine, const v3s16 &maxe, u32 area_id = U32_MAX) :
+		id(area_id), minedge(mine), maxedge(maxe)
 	{
 		sortBoxVerticies(minedge, maxedge);
 	}
@@ -54,13 +36,10 @@ struct Area {
 class AreaStore {
 public:
 	AreaStore() :
-		m_cache_enabled(true),
-		m_cacheblock_radius(64),
-		m_res_cache(1000, &cacheMiss, this),
-		m_next_id(0)
+		m_res_cache(1000, &cacheMiss, this)
 	{}
 
-	virtual ~AreaStore() {}
+	virtual ~AreaStore() = default;
 
 	static AreaStore *getOptimalImplementation();
 
@@ -80,16 +59,20 @@ public:
 	/// Stores output in passed vector.
 	void getAreasForPos(std::vector<Area *> *result, v3s16 pos);
 
+	/// Finds areas that are overlapping the area defined by the passed edges.
+	/// This finds any areas that intersect with the passed area at any point.
+	virtual void getOverlappingAreas(std::vector<Area *> *result,
+		v3s16 minedge, v3s16 maxedge) = 0;
+
 	/// Finds areas that are completely contained inside the area defined
-	/// by the passed edges.  If @p accept_overlap is true this finds any
-	/// areas that intersect with the passed area at any point.
-	virtual void getAreasInArea(std::vector<Area *> *result,
-		v3s16 minedge, v3s16 maxedge, bool accept_overlap) = 0;
+	/// by the passed edges.
+	virtual void getContainingAreas(std::vector<Area *> *result,
+		v3s16 minedge, v3s16 maxedge) = 0;
 
 	/// Sets cache parameters.
 	void setCacheParams(bool enabled, u8 block_radius, size_t limit);
 
-	/// Returns a pointer to the area coresponding to the passed ID,
+	/// Returns a pointer to the area corresponding to the passed ID,
 	/// or NULL if it doesn't exist.
 	const Area *getArea(u32 id) const;
 
@@ -112,7 +95,7 @@ protected:
 	virtual void getAreasForPosImpl(std::vector<Area *> *result, v3s16 pos) = 0;
 
 	/// Returns the next area ID and increments it.
-	u32 getNextId() { return m_next_id++; }
+	u32 getNextId() const;
 
 	// Note: This can't be an unordered_map, since all
 	// references would be invalidated on rehash.
@@ -123,26 +106,24 @@ private:
 	/// Called by the cache when a value isn't found in the cache.
 	static void cacheMiss(void *data, const v3s16 &mpos, std::vector<Area *> *dest);
 
-	bool m_cache_enabled;
+	bool m_cache_enabled = true;
 	/// Range, in nodes, of the getAreasForPos cache.
 	/// If you modify this, call invalidateCache()
-	u8 m_cacheblock_radius;
+	u8 m_cacheblock_radius = 64;
 	LRUCache<v3s16, std::vector<Area *> > m_res_cache;
-
-	u32 m_next_id;
 };
 
 
 class VectorAreaStore : public AreaStore {
 public:
-	virtual void reserve(size_t count) { m_areas.reserve(count); }
-	virtual bool insertArea(Area *a);
-	virtual bool removeArea(u32 id);
-	virtual void getAreasInArea(std::vector<Area *> *result,
-		v3s16 minedge, v3s16 maxedge, bool accept_overlap);
+	void reserve(size_t count) override { m_areas.reserve(count); }
+	bool insertArea(Area *a) override;
+	bool removeArea(u32 id) override;
+	void getOverlappingAreas(std::vector<Area *> *result, v3s16 minedge, v3s16 maxedge) override;
+	void getContainingAreas(std::vector<Area *> *result, v3s16 minedge, v3s16 maxedge) override;
 
 protected:
-	virtual void getAreasForPosImpl(std::vector<Area *> *result, v3s16 pos);
+	void getAreasForPosImpl(std::vector<Area *> *result, v3s16 pos) override;
 
 private:
 	std::vector<Area *> m_areas;
@@ -156,17 +137,17 @@ public:
 	SpatialAreaStore();
 	virtual ~SpatialAreaStore();
 
-	virtual bool insertArea(Area *a);
-	virtual bool removeArea(u32 id);
-	virtual void getAreasInArea(std::vector<Area *> *result,
-		v3s16 minedge, v3s16 maxedge, bool accept_overlap);
+	bool insertArea(Area *a) override;
+	bool removeArea(u32 id) override;
+	void getOverlappingAreas(std::vector<Area *> *result, v3s16 minedge, v3s16 maxedge) override;
+	void getContainingAreas(std::vector<Area *> *result, v3s16 minedge, v3s16 maxedge) override;
 
 protected:
-	virtual void getAreasForPosImpl(std::vector<Area *> *result, v3s16 pos);
+	void getAreasForPosImpl(std::vector<Area *> *result, v3s16 pos) override;
 
 private:
-	SpatialIndex::ISpatialIndex *m_tree;
-	SpatialIndex::IStorageManager *m_storagemanager;
+	SpatialIndex::ISpatialIndex *m_tree = nullptr;
+	SpatialIndex::IStorageManager *m_storagemanager = nullptr;
 
 	class VectorResultVisitor : public SpatialIndex::IVisitor {
 	public:
@@ -182,7 +163,7 @@ private:
 		{
 			u32 id = in.getIdentifier();
 
-			std::map<u32, Area>::iterator itr = m_store->areas_map.find(id);
+			auto itr = m_store->areas_map.find(id);
 			assert(itr != m_store->areas_map.end());
 			m_result->push_back(&itr->second);
 		}
@@ -194,11 +175,9 @@ private:
 		}
 
 	private:
-		SpatialAreaStore *m_store;
-		std::vector<Area *> *m_result;
+		SpatialAreaStore *m_store = nullptr;
+		std::vector<Area *> *m_result = nullptr;
 	};
 };
 
 #endif // USE_SPATIAL
-
-#endif // AREA_STORE_H_

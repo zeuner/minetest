@@ -1,23 +1,12 @@
---Minetest
---Copyright (C) 2014 sapier
---
---This program is free software; you can redistribute it and/or modify
---it under the terms of the GNU Lesser General Public License as published by
---the Free Software Foundation; either version 2.1 of the License, or
---(at your option) any later version.
---
---This program is distributed in the hope that it will be useful,
---but WITHOUT ANY WARRANTY; without even the implied warranty of
---MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
---GNU Lesser General Public License for more details.
---
---You should have received a copy of the GNU Lesser General Public License along
---with this program; if not, write to the Free Software Foundation, Inc.,
---51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+-- Luanti
+-- Copyright (C) 2014 sapier
+-- SPDX-License-Identifier: LGPL-2.1-or-later
 
 ui = {}
 ui.childlist = {}
 ui.default = nil
+-- Whether fstk is currently showing its own formspec instead of active ui elements.
+ui.overridden = false
 
 --------------------------------------------------------------------------------
 function ui.add(child)
@@ -49,57 +38,59 @@ function ui.find_by_name(name)
 end
 
 --------------------------------------------------------------------------------
+-- "title" and "message" must already be formspec-escaped, e.g. via fgettext or
+-- core.formspec_escape.
+function ui.get_message_formspec(title, message, btn_id)
+	return table.concat({
+		"size[14,8]",
+		"real_coordinates[true]",
+		"set_focus[", btn_id, ";true]",
+		"box[0.5,1.2;13,5;#000]",
+		("textarea[0.5,1.2;13,5;;%s;%s]"):format(title, message),
+		"button[2,6.6;4,1;btn_error_copy;" .. fgettext("Copy to clipboard") .. "]",
+		"button[8,6.6;4,1;", btn_id, ";" .. fgettext("OK") .. "]"
+	})
+end
+
+--------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 -- Internal functions not to be called from user
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
-local function wordwrap_quickhack(str)
-	local res = ""
-	local ar = str:split("\n")
-	for i = 1, #ar do
-		local text = ar[i]
-		-- Hack to add word wrapping.
-		-- TODO: Add engine support for wrapping in formspecs
-		while #text > 80 do
-			if res ~= "" then
-				res = res .. ","
-			end
-			res = res .. core.formspec_escape(string.sub(text, 1, 79))
-			text = string.sub(text, 80, #text)
-		end
-		if res ~= "" then
-			res = res .. ","
-		end
-		res = res .. core.formspec_escape(text)
-	end
-	return res
-end
-
---------------------------------------------------------------------------------
 function ui.update()
-	local formspec = ""
+	ui.overridden = false
+	local formspec = {}
 
 	-- handle errors
 	if gamedata ~= nil and gamedata.reconnect_requested then
-		formspec = wordwrap_quickhack(gamedata.errormessage or "")
-		formspec = "size[12,5]" ..
-				"label[0.5,0;" .. fgettext("The server has requested a reconnect:") ..
-				"]textlist[0.2,0.8;11.5,3.5;;" .. formspec ..
-				"]button[6,4.6;3,0.5;btn_reconnect_no;" .. fgettext("Main menu") .. "]" ..
-				"button[3,4.6;3,0.5;btn_reconnect_yes;" .. fgettext("Reconnect") .. "]"
+		local error_message = core.formspec_escape(gamedata.errormessage)
+				or fgettext("<none available>")
+		formspec = {
+			"size[14,8]",
+			"real_coordinates[true]",
+			"set_focus[btn_reconnect_yes;true]",
+			"box[0.5,1.2;13,5;#000]",
+			("textarea[0.5,1.2;13,5;;%s;%s]"):format(
+				fgettext("The server has requested a reconnect:"), error_message),
+			"button[2,6.6;4,1;btn_reconnect_yes;" .. fgettext("Reconnect") .. "]",
+			"button[8,6.6;4,1;btn_reconnect_no;" .. fgettext("Main menu") .. "]"
+		}
+		ui.overridden = true
 	elseif gamedata ~= nil and gamedata.errormessage ~= nil then
-		formspec = wordwrap_quickhack(gamedata.errormessage)
+		-- Note to API users:
+		-- "gamedata.errormessage" must not be formspec-escaped yet.
+		-- For translations, fgettext_ne should be used.
+		local error_message = core.formspec_escape(gamedata.errormessage)
+
 		local error_title
 		if string.find(gamedata.errormessage, "ModError") then
-			error_title = fgettext("An error occured in a Lua script, such as a mod:")
+			error_title = fgettext("An error occurred in a Lua script:")
 		else
-			error_title = fgettext("An error occured:")
+			error_title = fgettext("An error occurred:")
 		end
-		formspec = "size[12,5]" ..
-				"label[0.5,0;" .. error_title ..
-				"]textlist[0.2,0.8;11.5,3.5;;" .. formspec ..
-				"]button[4.5,4.6;3,0.5;btn_error_confirm;" .. fgettext("Ok") .. "]"
+		formspec = {ui.get_message_formspec(error_title, error_message, "btn_error_confirm")}
+		ui.overridden = true
 	else
 		local active_toplevel_ui_elements = 0
 		for key,value in pairs(ui.childlist) do
@@ -107,8 +98,8 @@ function ui.update()
 				local retval = value:get_formspec()
 
 				if retval ~= nil and retval ~= "" then
-					active_toplevel_ui_elements = active_toplevel_ui_elements +1
-					formspec = formspec .. retval
+					active_toplevel_ui_elements = active_toplevel_ui_elements + 1
+					table.insert(formspec, retval)
 				end
 			end
 		end
@@ -120,7 +111,7 @@ function ui.update()
 					local retval = value:get_formspec()
 
 					if retval ~= nil and retval ~= "" then
-						formspec = formspec .. retval
+						table.insert(formspec, retval)
 					end
 				end
 			end
@@ -128,17 +119,17 @@ function ui.update()
 
 		if (active_toplevel_ui_elements > 1) then
 			core.log("warning", "more than one active ui "..
-				"element, self most likely isn't intended")
+				"element, this most likely isn't intended")
 		end
 
 		if (active_toplevel_ui_elements == 0) then
 			core.log("warning", "no toplevel ui element "..
 					"active; switching to default")
 			ui.childlist[ui.default]:show()
-			formspec = ui.childlist[ui.default]:get_formspec()
+			formspec = {ui.childlist[ui.default]:get_formspec()}
 		end
 	end
-	core.update_formspec(formspec)
+	core.update_formspec(table.concat(formspec))
 end
 
 --------------------------------------------------------------------------------
@@ -176,6 +167,10 @@ end
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 core.button_handler = function(fields)
+	if fields["try_quit"] and not fields["key_enter"] then
+		core.event_handler("MenuQuit")
+		return
+	end
 	if fields["btn_reconnect_yes"] then
 		gamedata.reconnect_requested = false
 		gamedata.errormessage = nil
@@ -187,6 +182,9 @@ core.button_handler = function(fields)
 		gamedata.reconnect_requested = false
 		ui.update()
 		return
+	elseif fields["btn_error_copy"] then
+		core.copy_to_clipboard(gamedata.errormessage)
+		return
 	end
 
 	if ui.handle_buttons(fields) then
@@ -196,6 +194,16 @@ end
 
 --------------------------------------------------------------------------------
 core.event_handler = function(event)
+	-- Handle error messages
+	if ui.overridden then
+		if event == "MenuQuit" then
+			gamedata.errormessage = nil
+			gamedata.reconnect_requested = false
+			ui.update()
+		end
+		return
+	end
+
 	if ui.handle_events(event) then
 		ui.update()
 		return

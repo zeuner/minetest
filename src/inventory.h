@@ -1,52 +1,48 @@
-/*
-Minetest
-Copyright (C) 2010-2013 celeron55, Perttu Ahola <celeron55@gmail.com>
+// Luanti
+// SPDX-License-Identifier: LGPL-2.1-or-later
+// Copyright (C) 2010-2013 celeron55, Perttu Ahola <celeron55@gmail.com>
 
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU Lesser General Public License as published by
-the Free Software Foundation; either version 2.1 of the License, or
-(at your option) any later version.
+#pragma once
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Lesser General Public License for more details.
-
-You should have received a copy of the GNU Lesser General Public License along
-with this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
-*/
-
-#ifndef INVENTORY_HEADER
-#define INVENTORY_HEADER
-
-#include "debug.h"
-#include "itemdef.h"
 #include "irrlichttypes.h"
 #include "itemstackmetadata.h"
 #include <istream>
+#include <memory>
 #include <ostream>
 #include <string>
 #include <vector>
+#include <cassert>
 
+struct ItemDefinition;
+struct ItemImageDef;
 struct ToolCapabilities;
 
 struct ItemStack
 {
-	ItemStack(): name(""), count(0), wear(0) {}
-	ItemStack(const std::string &name_, u16 count_,
-			u16 wear, IItemDefManager *itemdef);
+	ItemStack() = default;
 
-	~ItemStack() {}
+	ItemStack(const std::string &name_, u16 count_,
+			u16 wear, const IItemDefManager *itemdef);
+
+	~ItemStack() = default;
 
 	// Serialization
-	void serialize(std::ostream &os) const;
-	// Deserialization.  Pass itemdef unless you don't want aliases resolved.
-	void deSerialize(std::istream &is, IItemDefManager *itemdef = NULL);
-	void deSerialize(const std::string &s, IItemDefManager *itemdef = NULL);
+	void serialize(std::ostream &os, bool serialize_meta = true) const;
+	// Deserialization. Pass itemdef unless you don't want aliases resolved.
+	void deSerialize(std::istream &is, const IItemDefManager *itemdef = NULL);
+	void deSerialize(const std::string &s, const IItemDefManager *itemdef = NULL);
 
 	// Returns the string used for inventory
-	std::string getItemString() const;
+	std::string getItemString(bool include_meta = true) const;
+	// Returns the tooltip
+	std::string getDescription(const IItemDefManager *itemdef) const;
+	std::string getShortDescription(const IItemDefManager *itemdef) const;
+
+	ItemImageDef getInventoryImage(const IItemDefManager *itemdef) const;
+	ItemImageDef getInventoryOverlay(const IItemDefManager *itemdef) const;
+	ItemImageDef getWieldImage(const IItemDefManager *itemdef) const;
+	ItemImageDef getWieldOverlay(const IItemDefManager *itemdef) const;
+	v3f getWieldScale(const IItemDefManager *itemdef) const;
 
 	/*
 		Quantity methods
@@ -79,13 +75,10 @@ struct ItemStack
 	}
 
 	// Maximum size of a stack
-	u16 getStackMax(IItemDefManager *itemdef) const
-	{
-		return itemdef->get(name).stack_max;
-	}
+	u16 getStackMax(const IItemDefManager *itemdef) const;
 
 	// Number of items that can be added to this stack
-	u16 freeSpace(IItemDefManager *itemdef) const
+	u16 freeSpace(const IItemDefManager *itemdef) const
 	{
 		u16 max = getStackMax(itemdef);
 		if (count >= max)
@@ -94,64 +87,41 @@ struct ItemStack
 	}
 
 	// Returns false if item is not known and cannot be used
-	bool isKnown(IItemDefManager *itemdef) const
-	{
-		return itemdef->isKnown(name);
-	}
+	bool isKnown(const IItemDefManager *itemdef) const;
 
 	// Returns a pointer to the item definition struct,
 	// or a fallback one (name="unknown") if the item is unknown.
-	const ItemDefinition& getDefinition(
-			IItemDefManager *itemdef) const
-	{
-		return itemdef->get(name);
-	}
+	const ItemDefinition &getDefinition(
+			const IItemDefManager *itemdef) const;
 
 	// Get tool digging properties, or those of the hand if not a tool
-	const ToolCapabilities& getToolCapabilities(
-			IItemDefManager *itemdef) const
-	{
-		ToolCapabilities *cap;
-		cap = itemdef->get(name).tool_capabilities;
-		if(cap == NULL)
-			cap = itemdef->get("").tool_capabilities;
-		assert(cap != NULL);
-		return *cap;
-	}
+	// If not hand assumes default hand ""
+	const ToolCapabilities &getToolCapabilities(
+			const IItemDefManager *itemdef, const ItemStack *hand = nullptr) const;
+
+	const std::optional<WearBarParams> &getWearBarParams(
+			const IItemDefManager *itemdef) const;
 
 	// Wear out (only tools)
 	// Returns true if the item is (was) a tool
-	bool addWear(s32 amount, IItemDefManager *itemdef)
-	{
-		if(getDefinition(itemdef).type == ITEM_TOOL)
-		{
-			if(amount > 65535 - wear)
-				clear();
-			else if(amount < -wear)
-				wear = 0;
-			else
-				wear += amount;
-			return true;
-		}
-		else
-		{
-			return false;
-		}
-	}
+	bool addWear(s32 amount, const IItemDefManager *itemdef);
 
 	// If possible, adds newitem to this item.
 	// If cannot be added at all, returns the item back.
 	// If can be added partly, decremented item is returned back.
 	// If can be added fully, empty item is returned.
-	ItemStack addItem(const ItemStack &newitem,
-			IItemDefManager *itemdef);
+	ItemStack addItem(ItemStack newitem, const IItemDefManager *itemdef);
 
 	// Checks whether newitem could be added.
 	// If restitem is non-NULL, it receives the part of newitem that
 	// would be left over after adding.
-	bool itemFits(const ItemStack &newitem,
+	bool itemFits(ItemStack newitem,
 			ItemStack *restitem,  // may be NULL
-			IItemDefManager *itemdef) const;
+			const IItemDefManager *itemdef) const;
+
+	// Checks if another itemstack would stack with this one.
+	// Does not check if the item actually fits in the stack.
+	bool stacksWith(const ItemStack &other) const;
 
 	// Takes some items.
 	// If there are not enough, takes as many as it can.
@@ -161,28 +131,41 @@ struct ItemStack
 	// Similar to takeItem, but keeps this ItemStack intact.
 	ItemStack peekItem(u32 peekcount) const;
 
+	bool operator ==(const ItemStack &s) const
+	{
+		return (this->name     == s.name &&
+				this->count    == s.count &&
+				this->wear     == s.wear &&
+				this->metadata == s.metadata);
+	}
+
+	bool operator !=(const ItemStack &s) const
+	{
+		return !(*this == s);
+	}
+
 	/*
 		Properties
 	*/
-	std::string name;
-	u16 count;
-	u16 wear;
+	std::string name = "";
+	u16 count = 0;
+	u16 wear = 0;
 	ItemStackMetadata metadata;
 };
 
 class InventoryList
 {
 public:
-	InventoryList(std::string name, u32 size, IItemDefManager *itemdef);
-	~InventoryList();
+	InventoryList(const std::string &name, u32 size, const IItemDefManager *itemdef);
+	~InventoryList() = default;
 	void clearItems();
 	void setSize(u32 newsize);
 	void setWidth(u32 newWidth);
 	void setName(const std::string &name);
-	void serialize(std::ostream &os) const;
+	void serialize(std::ostream &os, bool incremental) const;
 	void deSerialize(std::istream &is);
 
-	InventoryList(const InventoryList &other);
+	InventoryList(const InventoryList &other) { *this = other; }
 	InventoryList & operator = (const InventoryList &other);
 	bool operator == (const InventoryList &other) const;
 	bool operator != (const InventoryList &other) const
@@ -190,16 +173,25 @@ public:
 		return !(*this == other);
 	}
 
-	const std::string &getName() const;
-	u32 getSize() const;
-	u32 getWidth() const;
+	const std::string &getName() const { return m_name; }
+	u32 getSize() const { return static_cast<u32>(m_items.size()); }
+	u32 getWidth() const { return m_width; }
 	// Count used slots
 	u32 getUsedSlots() const;
-	u32 getFreeSlots() const;
 
 	// Get reference to item
-	const ItemStack& getItem(u32 i) const;
-	ItemStack& getItem(u32 i);
+	const ItemStack &getItem(u32 i) const
+	{
+		assert(i < m_size); // Pre-condition
+		return m_items[i];
+	}
+	ItemStack &getItem(u32 i)
+	{
+		assert(i < m_size); // Pre-condition
+		return m_items[i];
+	}
+	// Get reference to all items
+	const std::vector<ItemStack> &getItems() const { return m_items; }
 	// Returns old item. Parameter can be an empty item.
 	ItemStack changeItem(u32 i, const ItemStack &newitem);
 	// Delete item
@@ -223,40 +215,65 @@ public:
 	// Checks whether there is room for a given item
 	bool roomForItem(const ItemStack &item) const;
 
-	// Checks whether the given count of the given item name
+	// Checks whether the given count of the given item
 	// exists in this inventory list.
-	bool containsItem(const ItemStack &item) const;
+	// If match_meta is false, only the items' names are compared.
+	bool containsItem(const ItemStack &item, bool match_meta) const;
 
 	// Removes the given count of the given item name from
 	// this inventory list. Walks the list in reverse order.
 	// If not as many items exist as requested, removes as
 	// many as possible.
 	// Returns the items that were actually removed.
-	ItemStack removeItem(const ItemStack &item);
+	ItemStack removeItem(const ItemStack &item, bool match_meta);
 
 	// Takes some items from a slot.
 	// If there are not enough, takes as many as it can.
 	// Returns empty item if couldn't take any.
 	ItemStack takeItem(u32 i, u32 takecount);
 
-	// Similar to takeItem, but keeps the slot intact.
-	ItemStack peekItem(u32 i, u32 peekcount) const;
-
 	// Move an item to a different list (or a different stack in the same list)
 	// count is the maximum number of items to move (0 for everything)
-	// returns number of moved items
-	u32 moveItem(u32 i, InventoryList *dest, u32 dest_i,
+	// returns the moved stack
+	ItemStack moveItem(u32 i, InventoryList *dest, u32 dest_i,
 		u32 count = 0, bool swap_if_needed = true, bool *did_swap = NULL);
 
 	// like moveItem, but without a fixed destination index
 	// also with optional rollback recording
 	void moveItemSomewhere(u32 i, InventoryList *dest, u32 count);
 
+	inline bool checkModified() const { return m_dirty; }
+	inline void setModified(bool dirty = true) { m_dirty = dirty; }
+
+	// Problem: C++ keeps references to InventoryList and ItemStack indices
+	// Until a better solution is found, this serves as a guard to prevent UaF.
+	struct ResizeUnlocker {
+		void operator()(InventoryList *invlist)
+		{
+			if (invlist) {
+				assert(invlist->m_resize_locks > 0);
+				invlist->m_resize_locks -= 1;
+			}
+		}
+	};
+	using ResizeLocked = std::unique_ptr<InventoryList, ResizeUnlocker>;
+
+	void checkResizeLock();
+
+	inline ResizeLocked resizeLock()
+	{
+		m_resize_locks += 1;
+		return ResizeLocked(this);
+	}
+
 private:
 	std::vector<ItemStack> m_items;
-	u32 m_size, m_width;
 	std::string m_name;
-	IItemDefManager *m_itemdef;
+	u32 m_size; // always the same as m_items.size()
+	u32 m_width = 0;
+	const IItemDefManager *m_itemdef;
+	bool m_dirty = true;
+	int m_resize_locks = 0; // Lua callback sanity
 };
 
 class Inventory
@@ -265,9 +282,8 @@ public:
 	~Inventory();
 
 	void clear();
-	void clearContents();
 
-	Inventory(IItemDefManager *itemdef);
+	Inventory(const IItemDefManager *itemdef);
 	Inventory(const Inventory &other);
 	Inventory & operator = (const Inventory &other);
 	bool operator == (const Inventory &other) const;
@@ -276,41 +292,51 @@ public:
 		return !(*this == other);
 	}
 
-	void serialize(std::ostream &os) const;
+	// Never ever serialize to disk using "incremental"!
+	void serialize(std::ostream &os, bool incremental = false) const;
 	void deSerialize(std::istream &is);
 
+	// Creates a new list if none exists or truncates existing lists
 	InventoryList * addList(const std::string &name, u32 size);
 	InventoryList * getList(const std::string &name);
 	const InventoryList * getList(const std::string &name) const;
-	std::vector<const InventoryList*> getLists();
+	const std::vector<InventoryList *> &getLists() const { return m_lists; }
 	bool deleteList(const std::string &name);
 	// A shorthand for adding items. Returns leftover item (possibly empty).
 	ItemStack addItem(const std::string &listname, const ItemStack &newitem)
 	{
-		m_dirty = true;
 		InventoryList *list = getList(listname);
 		if(list == NULL)
 			return newitem;
 		return list->addItem(newitem);
 	}
 
-	bool checkModified() const
+	inline bool checkModified() const
 	{
-		return m_dirty;
+		if (m_dirty)
+			return true;
+
+		for (const auto &list : m_lists)
+			if (list->checkModified())
+				return true;
+
+		return false;
 	}
 
-	void setModified(const bool x)
+	inline void setModified(bool dirty = true)
 	{
-		m_dirty = x;
+		m_dirty = dirty;
+		// Set all as handled
+		if (!dirty) {
+			for (const auto &list : m_lists)
+				list->setModified(dirty);
+		}
 	}
-
 private:
 	// -1 if not found
-	const s32 getListIndex(const std::string &name) const;
+	s32 getListIndex(const std::string &name) const;
 
 	std::vector<InventoryList*> m_lists;
-	IItemDefManager *m_itemdef;
-	bool m_dirty;
+	const IItemDefManager *m_itemdef;
+	bool m_dirty = true;
 };
-
-#endif

@@ -1,21 +1,6 @@
-/*
-Minetest
-Copyright (C) 2010-2014 kwolekr, Ryan Kwolek <kwolekr@minetest.net>
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU Lesser General Public License as published by
-the Free Software Foundation; either version 2.1 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Lesser General Public License for more details.
-
-You should have received a copy of the GNU Lesser General Public License along
-with this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
-*/
+// Luanti
+// SPDX-License-Identifier: LGPL-2.1-or-later
+// Copyright (C) 2010-2014 kwolekr, Ryan Kwolek <kwolekr@minetest.net>
 
 #include "test.h"
 
@@ -23,6 +8,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "exceptions.h"
 #include "gamedef.h"
 #include "nodedef.h"
+
+#include <algorithm>
 
 
 class TestNodeResolver : public TestBase {
@@ -32,18 +19,18 @@ public:
 
 	void runTests(IGameDef *gamedef);
 
-	void testNodeResolving(IWritableNodeDefManager *ndef);
-	void testPendingResolveCancellation(IWritableNodeDefManager *ndef);
-	void testDirectResolveMethod(IWritableNodeDefManager *ndef);
-	void testNoneResolveMethod(IWritableNodeDefManager *ndef);
+	void testNodeResolving(NodeDefManager *ndef);
+	void testPendingResolveCancellation(NodeDefManager *ndef);
+	void testDirectResolveMethod(NodeDefManager *ndef);
+	void testNoneResolveMethod(NodeDefManager *ndef);
 };
 
 static TestNodeResolver g_test_instance;
 
 void TestNodeResolver::runTests(IGameDef *gamedef)
 {
-	IWritableNodeDefManager *ndef =
-		(IWritableNodeDefManager *)gamedef->getNodeDefManager();
+	NodeDefManager *ndef =
+		(NodeDefManager *)gamedef->getNodeDefManager();
 
 	ndef->resetNodeResolveState();
 	TEST(testNodeResolving, ndef);
@@ -54,6 +41,8 @@ void TestNodeResolver::runTests(IGameDef *gamedef)
 
 class Foobar : public NodeResolver {
 public:
+	friend class TestNodeResolver; // m_ndef
+
 	void resolveNodeNames();
 
 	content_t test_nr_node1;
@@ -102,33 +91,33 @@ void Foobaz::resolveNodeNames()
 }
 
 
-void TestNodeResolver::testNodeResolving(IWritableNodeDefManager *ndef)
+void TestNodeResolver::testNodeResolving(NodeDefManager *ndef)
 {
 	Foobar foobar;
 	size_t i;
 
-	foobar.m_nodenames.push_back("default:torch");
+	foobar.m_nodenames.emplace_back("default:torch");
 
-	foobar.m_nodenames.push_back("default:dirt_with_grass");
-	foobar.m_nodenames.push_back("default:water");
-	foobar.m_nodenames.push_back("default:abloobloobloo");
-	foobar.m_nodenames.push_back("default:stone");
-	foobar.m_nodenames.push_back("default:shmegoldorf");
+	foobar.m_nodenames.emplace_back("default:dirt_with_grass");
+	foobar.m_nodenames.emplace_back("default:water");
+	foobar.m_nodenames.emplace_back("default:abloobloobloo");
+	foobar.m_nodenames.emplace_back("default:stone");
+	foobar.m_nodenames.emplace_back("default:shmegoldorf");
 	foobar.m_nnlistsizes.push_back(5);
 
-	foobar.m_nodenames.push_back("group:liquids");
+	foobar.m_nodenames.emplace_back("group:liquids");
 	foobar.m_nnlistsizes.push_back(1);
 
-	foobar.m_nodenames.push_back("default:warf");
-	foobar.m_nodenames.push_back("default:stone");
-	foobar.m_nodenames.push_back("default:bloop");
+	foobar.m_nodenames.emplace_back("default:warf");
+	foobar.m_nodenames.emplace_back("default:stone");
+	foobar.m_nodenames.emplace_back("default:bloop");
 	foobar.m_nnlistsizes.push_back(3);
 
 	foobar.m_nnlistsizes.push_back(0);
 
-	foobar.m_nodenames.push_back("default:brick");
-	foobar.m_nodenames.push_back("default:desert_stone");
-	foobar.m_nodenames.push_back("default:shnitzle");
+	foobar.m_nodenames.emplace_back("default:brick");
+	foobar.m_nodenames.emplace_back("default:desert_stone");
+	foobar.m_nodenames.emplace_back("default:shnitzle");
 
 	ndef->pendNodeResolve(&foobar);
 	UASSERT(foobar.m_ndef == ndef);
@@ -180,20 +169,20 @@ void TestNodeResolver::testNodeResolving(IWritableNodeDefManager *ndef)
 }
 
 
-void TestNodeResolver::testPendingResolveCancellation(IWritableNodeDefManager *ndef)
+void TestNodeResolver::testPendingResolveCancellation(NodeDefManager *ndef)
 {
 	Foobaz foobaz1;
 	foobaz1.test_content1 = 1234;
 	foobaz1.test_content2 = 5678;
-	foobaz1.m_nodenames.push_back("default:dirt_with_grass");
-	foobaz1.m_nodenames.push_back("default:abloobloobloo");
+	foobaz1.m_nodenames.emplace_back("default:dirt_with_grass");
+	foobaz1.m_nodenames.emplace_back("default:abloobloobloo");
 	ndef->pendNodeResolve(&foobaz1);
 
 	Foobaz foobaz2;
 	foobaz2.test_content1 = 1234;
 	foobaz2.test_content2 = 5678;
-	foobaz2.m_nodenames.push_back("default:dirt_with_grass");
-	foobaz2.m_nodenames.push_back("default:abloobloobloo");
+	foobaz2.m_nodenames.emplace_back("default:dirt_with_grass");
+	foobaz2.m_nodenames.emplace_back("default:abloobloobloo");
 	ndef->pendNodeResolve(&foobaz2);
 
 	ndef->cancelNodeResolveCallback(&foobaz1);

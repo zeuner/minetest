@@ -1,25 +1,32 @@
-Minetest Lua Client Modding API Reference 0.4.15
-================================================
-* More information at <http://www.minetest.net/>
-* Developer Wiki: <http://dev.minetest.net/>
+Luanti Lua Client Modding API Reference 5.19.0
+==============================================
+
+**WARNING**: if you're looking for the `minetest` namespace (e.g. `minetest.something`),
+it's now called `core` due to the renaming of Luanti (formerly Minetest).
+`minetest` will keep existing as an alias, so that old code won't break.
+
+Note that `core` has already existed since version 0.4.10, so you can use it
+safely without breaking backwards compatibility.
+
+* More information at <http://www.luanti.org/>
+* Additional documentation: <https://docs.luanti.org/>
 
 Introduction
 ------------
 
-**WARNING: The client API is currently unstable, and may break/change without warning.**
+** WARNING: The client API is currently unstable, and may break/change without warning. **
 
-Content and functionality can be added to Minetest 0.4 by using Lua
+Content and functionality can be added to Luanti by using Lua
 scripting in run-time loaded mods.
 
 A mod is a self-contained bunch of scripts, textures and other related
-things that is loaded by and interfaces with Minetest.
+things that is loaded by and interfaces with Luanti.
 
-Mods are contained and ran solely on the server side. Definitions and media
-files are automatically transferred to the client.
+Transferring client-sided mods from the server to the client is planned, but not implemented yet.
 
 If you see a deficiency in the API, feel free to attempt to add the
 functionality in the engine and API. You can send such improvements as
-source code patches on GitHub (https://github.com/minetest/minetest).
+source code patches on GitHub.
 
 Programming in Lua
 ------------------
@@ -31,17 +38,23 @@ Startup
 Mods are loaded during client startup from the mod load paths by running
 the `init.lua` scripts in a shared environment.
 
+In order to load client-side mods, the following conditions need to be satisfied:
+
+1) `$path_user/minetest.conf` contains the setting `enable_client_modding = true`
+
+2) The client-side mod located in `$path_user/clientmods/<modname>` is added to
+    `$path_user/clientmods/mods.conf` as `load_mod_<modname> = true`.
+
+Note: Depending on the remote server's settings, client-side mods might not
+be loaded or have limited functionality. See setting `csm_restriction_flags` for reference.
+
 Paths
 -----
 * `RUN_IN_PLACE=1` (Windows release, local build)
-    *  `$path_user`:
-        * Linux: `<build directory>`
-        * Windows: `<build directory>`
-    * `$path_share`
-        * Linux: `<build directory>`
-        * Windows:  `<build directory>`
+    * `$path_user`: `<build directory>`
+    * `$path_share`: `<build directory>`
 * `RUN_IN_PLACE=0`: (Linux release)
-    * `$path_share`
+    * `$path_share`:
         * Linux: `/usr/share/minetest`
         * Windows: `<install directory>/minetest-0.4.x`
     * `$path_user`:
@@ -57,7 +70,7 @@ Generic:
 
 In a run-in-place version (e.g. the distributed windows version):
 
-* `minetest-0.4.x/clientmods/` (User-installed mods)
+* `minetest/clientmods/` (User-installed mods)
 
 On an installed version on Linux:
 
@@ -66,65 +79,50 @@ On an installed version on Linux:
 
 Modpack support
 ----------------
+
 Mods can be put in a subdirectory, if the parent directory, which otherwise
-should be a mod, contains a file named `modpack.txt`. This file shall be
-empty, except for lines starting with `#`, which are comments.
+should be a mod, contains a file named `modpack.conf`.
+The file is a key-value store of modpack details.
+
+* `name`: The modpack name.
+* `description`: Description of mod to be shown in the Mods tab of the main
+                 menu.
 
 Mod directory structure
 ------------------------
 
-    mods
-    |-- modname
-    |   |-- depends.txt
-    |   |-- screenshot.png
-    |   |-- description.txt
-    |   |-- settingtypes.txt
-    |   |-- init.lua
-    |   |-- models
-    |   |-- textures
-    |   |   |-- modname_stuff.png
-    |   |   `-- modname_something_else.png
-    |   |-- sounds
-    |   |-- media
-    |   `-- <custom data>
-    `-- another
-
+    clientmods
+    ├── modname
+    │   ├── mod.conf
+    │   ├── init.lua
+    └── another
 
 ### modname
-The location of this directory can be fetched by using
-`minetest.get_modpath(modname)`.
 
-### `depends.txt`
-List of mods that have to be loaded before loading this mod.
+The location of this directory.
 
-A single line contains a single modname.
+### mod.conf
 
-Optional dependencies can be defined by appending a question mark
-to a single modname. Their meaning is that if the specified mod
-is missing, that does not prevent this mod from being loaded.
+An (optional) settings file that provides meta information about the mod.
 
-### `screenshot.png`
-A screenshot shown in the mod manager within the main menu. It should
-have an aspect ratio of 3:2 and a minimum size of 300×200 pixels.
-
-### `description.txt`
-A File containing description to be shown within mainmenu.
-
-### `settingtypes.txt`
-A file in the same format as the one in builtin. It will be parsed by the
-settings menu and the settings will be displayed in the "Mods" category.
+* `name`: The mod name. Allows Luanti to determine the mod name even if the
+          folder is wrongly named.
+* `description`: Description of mod to be shown in the Mods tab of the main
+                 menu.
+* `depends`: A comma separated list of dependencies. These are mods that must be
+             loaded before this mod.
+* `optional_depends`: A comma separated list of optional dependencies.
+                      Like a dependency, but no error if the mod doesn't exist.
 
 ### `init.lua`
+
 The main Lua script. Running this script should register everything it
-wants to register. Subsequent execution depends on minetest calling the
+wants to register. Subsequent execution depends on Luanti calling the
 registered callbacks.
 
-`minetest.setting_get(name)` and `minetest.setting_getbool(name)` can be used
-to read custom or existing settings at load time, if necessary.
-
-### `sounds`
-Media files (sounds) that will be transferred to the
-client and will be available for use by the mod.
+**NOTE**: Client mods currently can't provide textures, sounds, or models by
+themselves. Any media referenced in function calls must already be loaded
+(provided by mods that exist on the server).
 
 Naming convention for registered textual names
 ----------------------------------------------
@@ -151,29 +149,10 @@ when registering it.
 
 The `:` prefix can also be used for maintaining backwards compatibility.
 
-### Aliases
-Aliases can be added by using `minetest.register_alias(name, convert_to)` or
-`minetest.register_alias_force(name, convert_to).
-
-This will make Minetest to convert things called name to things called
-`convert_to`.
-
-The only difference between `minetest.register_alias` and
-`minetest.register_alias_force` is that if an item called `name` exists,
-`minetest.register_alias` will do nothing while
-`minetest.register_alias_force` will unregister it.
-
-This can be used for maintaining backwards compatibility.
-
-This can be also used for setting quick access names for things, e.g. if
-you have an item called `epiclylongmodname:stuff`, you could do
-
-    minetest.register_alias("stuff", "epiclylongmodname:stuff")
-
-and be able to use `/giveme stuff`.
-
 Sounds
 ------
+**NOTE: Connecting sounds to objects is not implemented.**
+
 Only Ogg Vorbis files are supported.
 
 For positional playing of sounds, only single-channel (mono) files are
@@ -199,39 +178,26 @@ from the available ones of the following files:
 
 Examples of sound parameter tables:
 
-    -- Play locationless on all clients
-    {
-        gain = 1.0, -- default
-    }
-    -- Play locationless to one player
-    {
-        to_player = name,
-        gain = 1.0, -- default
-    }
-    -- Play locationless to one player, looped
-    {
-        to_player = name,
-        gain = 1.0, -- default
-        loop = true,
-    }
-    -- Play in a location
-    {
-        pos = {x = 1, y = 2, z = 3},
-        gain = 1.0, -- default
-        max_hear_distance = 32, -- default, uses an euclidean metric
-    }
-    -- Play connected to an object, looped
-    {
-        object = <an ObjectRef>,
-        gain = 1.0, -- default
-        max_hear_distance = 32, -- default, uses an euclidean metric
-        loop = true,
-    }
+```lua
+-- Play locationless
+{
+    gain = 1.0, -- default
+}
+-- Play locationless, looped
+{
+    gain = 1.0, -- default
+    loop = true,
+}
+-- Play in a location
+{
+    pos = {x = 1, y = 2, z = 3},
+    gain = 1.0, -- default
+}
+```
 
-Looped sounds must either be connected to an object or played locationless to
-one player using `to_player = name,`
+Looped sounds must be played locationless.
 
-### `SimpleSoundSpec`
+### SimpleSoundSpec
 * e.g. `""`
 * e.g. `"default_place_node"`
 * e.g. `{}`
@@ -243,389 +209,33 @@ Representations of simple things
 
 ### Position/vector
 
-    {x=num, y=num, z=num}
+```lua
+{x=num, y=num, z=num}
+```
 
 For helper functions see "Vector helpers".
 
-### `pointed_thing`
+### pointed_thing
 * `{type="nothing"}`
 * `{type="node", under=pos, above=pos}`
-* `{type="object", ref=ObjectRef}`
+* `{type="object", id=ObjectID}`
 
 Flag Specifier Format
 ---------------------
-Flags using the standardized flag specifier format can be specified in either of
-two ways, by string or table.
 
-The string format is a comma-delimited set of flag names; whitespace and
-unrecognized flag fields are ignored. Specifying a flag in the string sets the
-flag, and specifying a flag prefixed by the string `"no"` explicitly
-clears the flag from whatever the default may be.
-
-In addition to the standard string flag format, the schematic flags field can
-also be a table of flag names to boolean values representing whether or not the
-flag is set. Additionally, if a field with the flag name prefixed with `"no"`
-is present, mapped to a boolean of any value, the specified flag is unset.
-
-E.g. A flag field of value
-
-    {place_center_x = true, place_center_y=false, place_center_z=true}
-
-is equivalent to
-
-    {place_center_x = true, noplace_center_y=true, place_center_z=true}
-
-which is equivalent to
-
-    "place_center_x, noplace_center_y, place_center_z"
-
-or even
-
-    "place_center_x, place_center_z"
-
-since, by default, no schematic attributes are set.
+Refer to `lua_api.md`.
 
 Formspec
 --------
-Formspec defines a menu. Currently not much else than inventories are
-supported. It is a string, with a somewhat strange format.
 
-Spaces and newlines can be inserted between the blocks, as is used in the
-examples.
+Formspec defines a menu. It is a string, with a somewhat strange format.
 
-### Examples
-
-#### Chest
-
-    size[8,9]
-    list[context;main;0,0;8,4;]
-    list[current_player;main;0,5;8,4;]
-
-#### Furnace
-
-    size[8,9]
-    list[context;fuel;2,3;1,1;]
-    list[context;src;2,1;1,1;]
-    list[context;dst;5,1;2,2;]
-    list[current_player;main;0,5;8,4;]
-
-#### Minecraft-like player inventory
-
-    size[8,7.5]
-    image[1,0.6;1,2;player.png]
-    list[current_player;main;0,3.5;8,4;]
-    list[current_player;craft;3,0;3,3;]
-    list[current_player;craftpreview;7,1;1,1;]
-
-### Elements
-
-#### `size[<W>,<H>,<fixed_size>]`
-* Define the size of the menu in inventory slots
-* `fixed_size`: `true`/`false` (optional)
-* deprecated: `invsize[<W>,<H>;]`
-
-#### `container[<X>,<Y>]`
-* Start of a container block, moves all physical elements in the container by (X, Y)
-* Must have matching container_end
-* Containers can be nested, in which case the offsets are added
-  (child containers are relative to parent containers)
-
-#### `container_end[]`
-* End of a container, following elements are no longer relative to this container
-
-#### `list[<inventory location>;<list name>;<X>,<Y>;<W>,<H>;]`
-* Show an inventory list
-
-#### `list[<inventory location>;<list name>;<X>,<Y>;<W>,<H>;<starting item index>]`
-* Show an inventory list
-
-#### `listring[<inventory location>;<list name>]`
-* Allows to create a ring of inventory lists
-* Shift-clicking on items in one element of the ring
-  will send them to the next inventory list inside the ring
-* The first occurrence of an element inside the ring will
-  determine the inventory where items will be sent to
-
-#### `listring[]`
-* Shorthand for doing `listring[<inventory location>;<list name>]`
-  for the last two inventory lists added by list[...]
-
-#### `listcolors[<slot_bg_normal>;<slot_bg_hover>]`
-* Sets background color of slots as `ColorString`
-* Sets background color of slots on mouse hovering
-
-#### `listcolors[<slot_bg_normal>;<slot_bg_hover>;<slot_border>]`
-* Sets background color of slots as `ColorString`
-* Sets background color of slots on mouse hovering
-* Sets color of slots border
-
-#### `listcolors[<slot_bg_normal>;<slot_bg_hover>;<slot_border>;<tooltip_bgcolor>;<tooltip_fontcolor>]`
-* Sets background color of slots as `ColorString`
-* Sets background color of slots on mouse hovering
-* Sets color of slots border
-* Sets default background color of tooltips
-* Sets default font color of tooltips
-
-#### `tooltip[<gui_element_name>;<tooltip_text>;<bgcolor>,<fontcolor>]`
-* Adds tooltip for an element
-* `<bgcolor>` tooltip background color as `ColorString` (optional)
-* `<fontcolor>` tooltip font color as `ColorString` (optional)
-
-#### `image[<X>,<Y>;<W>,<H>;<texture name>]`
-* Show an image
-* Position and size units are inventory slots
-
-#### `item_image[<X>,<Y>;<W>,<H>;<item name>]`
-* Show an inventory image of registered item/node
-* Position and size units are inventory slots
-
-#### `bgcolor[<color>;<fullscreen>]`
-* Sets background color of formspec as `ColorString`
-* If `true`, the background color is drawn fullscreen (does not effect the size of the formspec)
-
-#### `background[<X>,<Y>;<W>,<H>;<texture name>]`
-* Use a background. Inventory rectangles are not drawn then.
-* Position and size units are inventory slots
-* Example for formspec 8x4 in 16x resolution: image shall be sized
-  8 times 16px  times  4 times 16px.
-
-#### `background[<X>,<Y>;<W>,<H>;<texture name>;<auto_clip>]`
-* Use a background. Inventory rectangles are not drawn then.
-* Position and size units are inventory slots
-* Example for formspec 8x4 in 16x resolution:
-  image shall be sized 8 times 16px  times  4 times 16px
-* If `true` the background is clipped to formspec size
-  (`x` and `y` are used as offset values, `w` and `h` are ignored)
-
-#### `pwdfield[<X>,<Y>;<W>,<H>;<name>;<label>]`
-* Textual password style field; will be sent to server when a button is clicked
-* When enter is pressed in field, fields.key_enter_field will be sent with the name
-  of this field.
-* `x` and `y` position the field relative to the top left of the menu
-* `w` and `h` are the size of the field
-* Fields are a set height, but will be vertically centred on `h`
-* Position and size units are inventory slots
-* `name` is the name of the field as returned in fields to `on_receive_fields`
-* `label`, if not blank, will be text printed on the top left above the field
-* See field_close_on_enter to stop enter closing the formspec
-
-#### `field[<X>,<Y>;<W>,<H>;<name>;<label>;<default>]`
-* Textual field; will be sent to server when a button is clicked
-* When enter is pressed in field, fields.key_enter_field will be sent with the name
-  of this field.
-* `x` and `y` position the field relative to the top left of the menu
-* `w` and `h` are the size of the field
-* Fields are a set height, but will be vertically centred on `h`
-* Position and size units are inventory slots
-* `name` is the name of the field as returned in fields to `on_receive_fields`
-* `label`, if not blank, will be text printed on the top left above the field
-* `default` is the default value of the field
-    * `default` may contain variable references such as `${text}'` which
-      will fill the value from the metadata value `text`
-    * **Note**: no extra text or more than a single variable is supported ATM.
-* See field_close_on_enter to stop enter closing the formspec
-
-#### `field[<name>;<label>;<default>]`
-* As above, but without position/size units
-* When enter is pressed in field, fields.key_enter_field will be sent with the name
-  of this field.
-* Special field for creating simple forms, such as sign text input
-* Must be used without a `size[]` element
-* A "Proceed" button will be added automatically
-* See field_close_on_enter to stop enter closing the formspec
-
-#### `field_close_on_enter[<name>;<close_on_enter>]`
-* <name> is the name of the field
-* if <close_on_enter> is false, pressing enter in the field will submit the form but not close it
-* defaults to true when not specified (ie: no tag for a field)
-
-#### `textarea[<X>,<Y>;<W>,<H>;<name>;<label>;<default>]`
-* Same as fields above, but with multi-line input
-
-#### `label[<X>,<Y>;<label>]`
-* `x` and `y` work as per field
-* `label` is the text on the label
-* Position and size units are inventory slots
-
-#### `vertlabel[<X>,<Y>;<label>]`
-* Textual label drawn vertically
-* `x` and `y` work as per field
-* `label` is the text on the label
-* Position and size units are inventory slots
-
-#### `button[<X>,<Y>;<W>,<H>;<name>;<label>]`
-* Clickable button. When clicked, fields will be sent.
-* `x`, `y` and `name` work as per field
-* `w` and `h` are the size of the button
-* `label` is the text on the button
-* Position and size units are inventory slots
-
-#### `image_button[<X>,<Y>;<W>,<H>;<texture name>;<name>;<label>]`
-* `x`, `y`, `w`, `h`, and `name` work as per button
-* `texture name` is the filename of an image
-* Position and size units are inventory slots
-
-#### `image_button[<X>,<Y>;<W>,<H>;<texture name>;<name>;<label>;<noclip>;<drawborder>;<pressed texture name>]`
-* `x`, `y`, `w`, `h`, and `name` work as per button
-* `texture name` is the filename of an image
-* Position and size units are inventory slots
-* `noclip=true` means the image button doesn't need to be within specified formsize
-* `drawborder`: draw button border or not
-* `pressed texture name` is the filename of an image on pressed state
-
-#### `item_image_button[<X>,<Y>;<W>,<H>;<item name>;<name>;<label>]`
-* `x`, `y`, `w`, `h`, `name` and `label` work as per button
-* `item name` is the registered name of an item/node,
-   tooltip will be made out of its description
-   to override it use tooltip element
-* Position and size units are inventory slots
-
-#### `button_exit[<X>,<Y>;<W>,<H>;<name>;<label>]`
-* When clicked, fields will be sent and the form will quit.
-
-#### `image_button_exit[<X>,<Y>;<W>,<H>;<texture name>;<name>;<label>]`
-* When clicked, fields will be sent and the form will quit.
-
-#### `textlist[<X>,<Y>;<W>,<H>;<name>;<listelem 1>,<listelem 2>,...,<listelem n>]`
-* Scrollable item list showing arbitrary text elements
-* `x` and `y` position the itemlist relative to the top left of the menu
-* `w` and `h` are the size of the itemlist
-* `name` fieldname sent to server on doubleclick value is current selected element
-* `listelements` can be prepended by #color in hexadecimal format RRGGBB (only),
-     * if you want a listelement to start with "#" write "##".
-
-#### `textlist[<X>,<Y>;<W>,<H>;<name>;<listelem 1>,<listelem 2>,...,<listelem n>;<selected idx>;<transparent>]`
-* Scrollable itemlist showing arbitrary text elements
-* `x` and `y` position the item list relative to the top left of the menu
-* `w` and `h` are the size of the item list
-* `name` fieldname sent to server on doubleclick value is current selected element
-* `listelements` can be prepended by #RRGGBB (only) in hexadecimal format
-     * if you want a listelement to start with "#" write "##"
-* Index to be selected within textlist
-* `true`/`false`: draw transparent background
-* See also `minetest.explode_textlist_event` (main menu: `engine.explode_textlist_event`)
-
-#### `tabheader[<X>,<Y>;<name>;<caption 1>,<caption 2>,...,<caption n>;<current_tab>;<transparent>;<draw_border>]`
-* Show a tab**header** at specific position (ignores formsize)
-* `x` and `y` position the itemlist relative to the top left of the menu
-* `name` fieldname data is transferred to Lua
-* `caption 1`...: name shown on top of tab
-* `current_tab`: index of selected tab 1...
-* `transparent` (optional): show transparent
-* `draw_border` (optional): draw border
-
-#### `box[<X>,<Y>;<W>,<H>;<color>]`
-* Simple colored semitransparent box
-* `x` and `y` position the box relative to the top left of the menu
-* `w` and `h` are the size of box
-* `color` is color specified as a `ColorString`
-
-#### `dropdown[<X>,<Y>;<W>;<name>;<item 1>,<item 2>, ...,<item n>;<selected idx>]`
-* Show a dropdown field
-* **Important note**: There are two different operation modes:
-     1. handle directly on change (only changed dropdown is submitted)
-     2. read the value on pressing a button (all dropdown values are available)
-* `x` and `y` position of dropdown
-* Width of dropdown
-* Fieldname data is transferred to Lua
-* Items to be shown in dropdown
-* Index of currently selected dropdown item
-
-#### `checkbox[<X>,<Y>;<name>;<label>;<selected>]`
-* Show a checkbox
-* `x` and `y`: position of checkbox
-* `name` fieldname data is transferred to Lua
-* `label` to be shown left of checkbox
-* `selected` (optional): `true`/`false`
-
-#### `scrollbar[<X>,<Y>;<W>,<H>;<orientation>;<name>;<value>]`
-* Show a scrollbar
-* There are two ways to use it:
-     1. handle the changed event (only changed scrollbar is available)
-     2. read the value on pressing a button (all scrollbars are available)
-* `x` and `y`: position of trackbar
-* `w` and `h`: width and height
-* `orientation`:  `vertical`/`horizontal`
-* Fieldname data is transferred to Lua
-* Value this trackbar is set to (`0`-`1000`)
-* See also `minetest.explode_scrollbar_event` (main menu: `engine.explode_scrollbar_event`)
-
-#### `table[<X>,<Y>;<W>,<H>;<name>;<cell 1>,<cell 2>,...,<cell n>;<selected idx>]`
-* Show scrollable table using options defined by the previous `tableoptions[]`
-* Displays cells as defined by the previous `tablecolumns[]`
-* `x` and `y`: position the itemlist relative to the top left of the menu
-* `w` and `h` are the size of the itemlist
-* `name`: fieldname sent to server on row select or doubleclick
-* `cell 1`...`cell n`: cell contents given in row-major order
-* `selected idx`: index of row to be selected within table (first row = `1`)
-* See also `minetest.explode_table_event` (main menu: `engine.explode_table_event`)
-
-#### `tableoptions[<opt 1>;<opt 2>;...]`
-* Sets options for `table[]`
-* `color=#RRGGBB`
-     * default text color (`ColorString`), defaults to `#FFFFFF`
-* `background=#RRGGBB`
-     * table background color (`ColorString`), defaults to `#000000`
-* `border=<true/false>`
-     * should the table be drawn with a border? (default: `true`)
-* `highlight=#RRGGBB`
-     * highlight background color (`ColorString`), defaults to `#466432`
-* `highlight_text=#RRGGBB`
-     * highlight text color (`ColorString`), defaults to `#FFFFFF`
-* `opendepth=<value>`
-     * all subtrees up to `depth < value` are open (default value = `0`)
-     * only useful when there is a column of type "tree"
-
-#### `tablecolumns[<type 1>,<opt 1a>,<opt 1b>,...;<type 2>,<opt 2a>,<opt 2b>;...]`
-* Sets columns for `table[]`
-* Types: `text`, `image`, `color`, `indent`, `tree`
-    * `text`:   show cell contents as text
-    * `image`:  cell contents are an image index, use column options to define images
-    * `color`:   cell contents are a ColorString and define color of following cell
-    * `indent`: cell contents are a number and define indentation of following cell
-    * `tree`:   same as indent, but user can open and close subtrees (treeview-like)
-* Column options:
-    * `align=<value>`
-        * for `text` and `image`: content alignment within cells.
-          Available values: `left` (default), `center`, `right`, `inline`
-    * `width=<value>`
-        * for `text` and `image`: minimum width in em (default: `0`)
-        * for `indent` and `tree`: indent width in em (default: `1.5`)
-    * `padding=<value>`: padding left of the column, in em (default `0.5`).
-      Exception: defaults to 0 for indent columns
-    * `tooltip=<value>`: tooltip text (default: empty)
-    * `image` column options:
-        * `0=<value>` sets image for image index 0
-        * `1=<value>` sets image for image index 1
-        * `2=<value>` sets image for image index 2
-        * and so on; defined indices need not be contiguous empty or
-          non-numeric cells are treated as `0`.
-    * `color` column options:
-        * `span=<value>`: number of following columns to affect (default: infinite)
-
-**Note**: do _not_ use a element name starting with `key_`; those names are reserved to
-pass key press events to formspec!
+For details, refer to `lua_api.md`.
 
 Spatial Vectors
 ---------------
-* `vector.new(a[, b, c])`: returns a vector:
-    * A copy of `a` if `a` is a vector.
-    * `{x = a, y = b, z = c}`, if all `a, b, c` are defined
-* `vector.direction(p1, p2)`: returns a vector
-* `vector.distance(p1, p2)`: returns a number
-* `vector.length(v)`: returns a number
-* `vector.normalize(v)`: returns a vector
-* `vector.floor(v)`: returns a vector, each dimension rounded down
-* `vector.round(v)`: returns a vector, each dimension rounded to nearest int
-* `vector.apply(v, func)`: returns a vector
-* `vector.equals(v1, v2)`: returns a boolean
 
-For the following functions `x` can be either a vector or a number:
-
-* `vector.add(v, x)`: returns a vector
-* `vector.subtract(v, x)`: returns a vector
-* `vector.multiply(v, x)`: returns a scaled vector or Schur product
-* `vector.divide(v, x)`: returns a scaled vector or Schur quotient
+Refer to `lua_api.md`.
 
 Helper functions
 ----------------
@@ -639,171 +249,388 @@ Helper functions
 * `math.sign(x, tolerance)`
     * Get the sign of a number.
       Optional: Also returns `0` when the absolute value is within the tolerance (default: `0`)
-* `string.split(str, separator=",", include_empty=false, max_splits=-1,
-* sep_is_pattern=false)`
+* `string.split(str, separator=",", include_empty=false, max_splits=-1, sep_is_pattern=false)`
     * If `max_splits` is negative, do not limit splits.
     * `sep_is_pattern` specifies if separator is a plain string or a pattern (regex).
     * e.g. `string:split("a,b", ",") == {"a","b"}`
 * `string:trim()`
     * e.g. `string.trim("\n \t\tfoo bar\t ") == "foo bar"`
-* `minetest.is_yes(arg)`
+* `core.wrap_text(str, limit)`: returns a string
+    * Adds new lines to the string to keep it within the specified character limit
+    * limit: Maximal amount of characters in one line
+* `core.pos_to_string({x=X,y=Y,z=Z}, decimal_places))`: returns string `"(X,Y,Z)"`
+    * Convert position to a printable string
+      Optional: 'decimal_places' will round the x, y and z of the pos to the given decimal place.
+* `core.string_to_pos(string)`: returns a position
+    * Same but in reverse. Returns `nil` if the string can't be parsed to a position.
+* `core.string_to_area("(X1, Y1, Z1) (X2, Y2, Z2)")`: returns two positions
+    * Converts a string representing an area box into two positions
+* `core.is_yes(arg)`
     * returns whether `arg` can be interpreted as yes
-* `minetest.get_us_time()`
-    * returns time with microsecond precision. May not return wall time.
+* `core.is_nan(arg)`
+    * returns true when the passed number represents NaN.
 * `table.copy(table)`: returns a table
     * returns a deep copy of `table`
 
-`minetest` namespace reference
-------------------------------
+'core' namespace reference
+--------------------------
 
 ### Utilities
 
-* `minetest.get_current_modname()`: returns the currently loading mod's name, when we are loading a mod
-* `minetest.get_version()`: returns a table containing components of the
+* `core.get_current_modname()`: returns the currently loading mod's name, when we are loading a mod
+* `core.get_modpath(modname)`: returns virtual path of given mod including
+   the trailing separator. This is useful to load additional Lua files
+   contained in your mod:
+   e.g. `dofile(core.get_modpath(core.get_current_modname()) .. "stuff.lua")`
+* `core.get_language()`: returns two strings
+   * the current gettext locale
+   * the current language code (the same as used for client-side translations)
+* `core.get_version()`: returns a table containing components of the
    engine version.  Components:
-    * `project`: Name of the project, eg, "Minetest"
+    * `project`: Name of the project, eg, "Luanti"
     * `string`: Simple version, eg, "1.2.3-dev"
     * `hash`: Full git version (only set if available), eg, "1.2.3-dev-01234567-dirty"
   Use this for informational purposes only. The information in the returned
   table does not represent the capabilities of the engine, nor is it
-  reliable or verifyable. Compatible forks will have a different name and
+  reliable or verifiable. Compatible forks will have a different name and
   version entirely. To check for the presence of engine features, test
   whether the functions exported by the wanted features exist. For example:
-  `if core.nodeupdate then ... end`.
+  `if core.check_for_falling then ... end`.
+* `core.sha1(data, [raw])`: returns the sha1 hash of data
+    * `data`: string of data to hash
+    * `raw`: return raw bytes instead of hex digits, default: false
+* `core.colorspec_to_colorstring(colorspec)`: Converts a ColorSpec to a
+  ColorString. If the ColorSpec is invalid, returns `nil`.
+    * `colorspec`: The ColorSpec to convert
+* `core.get_csm_restrictions()`: returns a table of `Flags` indicating the
+   restrictions applied to the current mod.
+   * If a flag in this table is set to true, the feature is RESTRICTED.
+   * Possible flags: `load_client_mods`, `chat_messages`, `read_itemdefs`,
+                   `read_nodedefs`, `lookup_nodes`, `read_playerinfo`
+* `core.urlencode(str)`: Encodes non-unreserved URI characters by a
+  percent sign followed by two hex digits. See
+  [RFC 3986, section 2.3](https://datatracker.ietf.org/doc/html/rfc3986#section-2.3).
 
 ### Logging
-* `minetest.debug(...)`
-    * Equivalent to `minetest.log(table.concat({...}, "\t"))`
-* `minetest.log([level,] text)`
+* `core.debug(...)`
+    * Equivalent to `core.log(table.concat({...}, "\t"))`
+* `core.log([level,] text)`
     * `level` is one of `"none"`, `"error"`, `"warning"`, `"action"`,
       `"info"`, or `"verbose"`.  Default is `"none"`.
 
 ### Global callback registration functions
 Call these functions only at load time!
 
-* `minetest.register_globalstep(func(dtime))`
-    * Called every client environment step, usually interval of 0.1s
-* `minetest.register_on_shutdown(func())`
+* `core.register_globalstep(function(dtime))`
+    * Called every client environment step
+    * `dtime` is the time since last execution in seconds.
+* `core.register_on_mods_loaded(function())`
+    * Called just after mods have finished loading.
+* `core.register_on_shutdown(function())`
     * Called before client shutdown
     * **Warning**: If the client terminates abnormally (i.e. crashes), the registered
       callbacks **will likely not be run**. Data should be saved at
       semi-frequent intervals as well as on server shutdown.
-* `minetest.register_on_receiving_chat_message(func(name, message))`
+* `core.register_on_receiving_chat_message(function(message))`
     * Called always when a client receive a message
     * Return `true` to mark the message as handled, which means that it will not be shown to chat
-* `minetest.register_on_sending_chat_message(func(name, message))`
-    * Called always when a client send a message from chat
+* `core.register_on_sending_chat_message(function(message))`
+    * Called always when a client sends a message from chat
     * Return `true` to mark the message as handled, which means that it will not be sent to server
-* `minetest.register_chatcommand(cmd, chatcommand definition)`
-    * Adds definition to minetest.registered_chatcommands
-* `minetest.register_on_death(func())`
-    * Called when the local player dies
-* `minetest.register_on_hp_modification(func(hp))`
+* `core.register_chatcommand(cmd, chatcommand definition)`
+    * Adds definition to core.registered_chatcommands
+* `core.unregister_chatcommand(name)`
+    * Unregisters a chatcommands registered with register_chatcommand.
+* `core.register_on_chatcommand(function(command, params))`
+    * Called always when a chatcommand is triggered, before `core.registered_chatcommands`
+      is checked to see if the command exists, but after the input is parsed.
+    * Return `true` to mark the command as handled, which means that the default
+      handlers will be prevented.
+* `core.register_on_hp_modification(function(hp))`
     * Called when server modified player's HP
-* `minetest.register_on_damage_taken(func(hp))`
+* `core.register_on_damage_taken(function(hp))`
     * Called when the local player take damages
-* `minetest.register_on_formspec_input(func(formname, fields))`
+* `core.register_on_formspec_input(function(formname, fields))`
     * Called when a button is pressed in the local player's inventory form
     * Newest functions are called first
     * If function returns `true`, remaining functions are not called
-* `minetest.register_on_dignode(func(pos, node))`
+* `core.register_on_dignode(function(pos, node))`
     * Called when the local player digs a node
     * Newest functions are called first
     * If any function returns true, the node isn't dug
-* `minetest.register_on_punchnode(func(pos, node))`
+* `core.register_on_punchnode(function(pos, node))`
     * Called when the local player punches a node
     * Newest functions are called first
     * If any function returns true, the punch is ignored
+* `core.register_on_placenode(function(pointed_thing, node))`
+    * Called when a node has been placed
+* `core.register_on_item_use(function(item, pointed_thing))`
+    * Called when the local player uses an item.
+    * Newest functions are called first.
+    * If any function returns true, the item use is not sent to server.
+* `core.register_on_modchannel_message(function(channel_name, sender, message))`
+    * Called when an incoming mod channel message is received
+    * You must have joined some channels before, and server must acknowledge the
+      join request.
+    * If message comes from a server mod, `sender` field is an empty string.
+* `core.register_on_modchannel_signal(function(channel_name, signal))`
+    * Called when a valid incoming mod channel signal is received
+    * Signal id permit to react to server mod channel events
+    * Possible values are:
+      0: join_ok
+      1: join_failed
+      2: leave_ok
+      3: leave_failed
+      4: event_on_not_joined_channel
+      5: state_changed
+* `core.register_on_inventory_open(function(inventory))`
+    * Called when the local player open inventory
+    * Newest functions are called first
+    * If any function returns true, inventory doesn't open
 ### Sounds
-* `minetest.sound_play(spec, parameters)`: returns a handle
+* `core.sound_play(spec, parameters)`: returns a handle
     * `spec` is a `SimpleSoundSpec`
     * `parameters` is a sound parameter table
-* `minetest.sound_stop(handle)`
+* `handle:stop()` or `core.sound_stop(handle)`
+    * `handle` is a handle returned by `core.sound_play`
+* `handle:fade(step, gain)` or `core.sound_fade(handle, step, gain)`
+    * `handle` is a handle returned by `core.sound_play`
+    * `step` determines how fast a sound will fade.
+      Negative step will lower the sound volume, positive step will increase
+      the sound volume.
+    * `gain` the target gain for the fade.
+* `core.debug_print_playing_sounds()`
+    * Logs a list of all currently playing sounds to warningstream.
+    * Only for debugging, don't depend on the output format or existence of this
+      function.
+    * Requires `debug` privilege.
 
 ### Timing
-* `minetest.after(time, func, ...)`
+* `core.after(time, func, ...)`
     * Call the function `func` after `time` seconds, may be fractional
     * Optional: Variable number of arguments that are passed to `func`
+    * Jobs set for earlier times are executed earlier. If multiple jobs expire
+      at exactly the same time, then they expire in the order in which they were
+      registered. This basically just applies to jobs registered on the same
+      step with the exact same delay.
+* `core.get_us_time()`
+    * Returns time with microsecond precision. May not return wall time.
+* `core.get_timeofday()`
+    * Returns the time of day: `0` for midnight, `0.5` for midday
 
 ### Map
-* `minetest.get_node(pos)`
+* `core.get_node_or_nil(pos)`
     * Returns the node at the given position as table in the format
-      `{name="node_name", param1=0, param2=0}`, returns `{name="ignore", param1=0, param2=0}`
-      for unloaded areas.
-* `minetest.get_node_or_nil(pos)`
-    * Same as `get_node` but returns `nil` for unloaded areas.
+      `{name="node_name", param1=0, param2=0}`, returns `nil`
+      for unloaded areas or flavor limited areas.
+* `core.get_node_light(pos, timeofday)`
+    * Gets the light value at the given position. Note that the light value
+      "inside" the node at the given position is returned, so you usually want
+      to get the light value of a neighbor.
+    * `pos`: The position where to measure the light.
+    * `timeofday`: `nil` for current time, `0` for night, `0.5` for day
+    * Returns a number between `0` and `15` or `nil`
+* `core.find_node_near(pos, radius, nodenames, [search_center])`: returns pos or `nil`
+    * `radius`: using a maximum metric
+    * `nodenames`: e.g. `{"ignore", "group:tree"}` or `"default:dirt"`
+    * `search_center` is an optional boolean (default: `false`)
+      If true `pos` is also checked for the nodes
+* `core.find_nodes_in_area(pos1, pos2, nodenames, [grouped])`
+    * `pos1` and `pos2` are the min and max positions of the area to search.
+    * `nodenames`: e.g. `{"ignore", "group:tree"}` or `"default:dirt"`
+    * If `grouped` is true the return value is a table indexed by node name
+      which contains lists of positions.
+    * If `grouped` is false or absent the return values are as follows:
+      first value: Table with all node positions
+      second value: Table with the count of each node with the node name
+      as index
+    * Area volume is limited to 4,096,000 nodes
+* `core.find_nodes_in_area_under_air(pos1, pos2, nodenames)`: returns a
+  list of positions.
+    * `nodenames`: e.g. `{"ignore", "group:tree"}` or `"default:dirt"`
+    * Return value: Table with all node positions with a node air above
+    * Area volume is limited to 4,096,000 nodes
+* `core.line_of_sight(pos1, pos2)`: returns `boolean, pos`
+    * Checks if there is anything other than air between pos1 and pos2.
+    * Returns false if something is blocking the sight.
+    * Returns the position of the blocking node when `false`
+    * `pos1`: First position
+    * `pos2`: Second position
+* `core.raycast(pos1, pos2, objects, liquids)`: returns `Raycast`
+    * Creates a `Raycast` object.
+    * `pos1`: start of the ray
+    * `pos2`: end of the ray
+    * `objects`: if false, only nodes will be returned. Default is `true`.
+    * `liquids`: if false, liquid nodes won't be returned. Default is `false`.
+
+* `core.find_nodes_with_meta(pos1, pos2)`
+    * Get a table of positions of nodes that have metadata within a region
+      {pos1, pos2}.
+* `core.get_meta(pos)`
+    * Get a `NodeMetaRef` at that position
+* `core.get_node_level(pos)`
+    * get level of leveled node (water, snow)
+* `core.get_node_max_level(pos)`
+    * get max available level for leveled node
 
 ### Player
-* `minetest.get_wielded_item()`
-    * Returns the itemstack the local player is holding
+* `core.send_chat_message(message)`
+    * Act as if `message` was typed by the player into the terminal.
+* `core.run_server_chatcommand(cmd, param)`
+    * Alias for `core.send_chat_message("/" .. cmd .. " " .. param)`
+* `core.clear_out_chat_queue()`
+    * Clears the out chat queue
+* `core.localplayer`
+    * Reference to the LocalPlayer object. See [`LocalPlayer`](#localplayer) class reference for methods.
+
+### Privileges
+* `core.get_privilege_list()`
+    * Returns a list of privileges the current player has in the format `{priv1=true,...}`
+* `core.string_to_privs(str)`: returns `{priv1=true,...}`
+* `core.privs_to_string(privs)`: returns `"priv1,priv2,..."`
+    * Convert between two privilege representations
 
 ### Client Environment
-* `minetest.get_player_names()`
-    * Returns list of player names on server
+* `core.get_player_names()`
+    * Returns list of player names on server (nil if CSM_RF_READ_PLAYERINFO is enabled by server)
+* `core.disconnect()`
+    * Disconnect from the server and exit to main menu.
+    * Returns `false` if the client is already disconnecting otherwise returns `true`.
+* `core.get_server_info()`
+    * Returns [server info](#server-info).
+
+### Storage API
+* `core.get_mod_storage()`:
+    * returns reference to mod private `StorageRef`
+    * must be called during mod load time
+
+### Mod channels
+![Mod channels communication scheme](docs/mod channels.png)
+
+* `core.mod_channel_join(channel_name)`
+    * Client joins channel `channel_name`, and creates it, if necessary. You
+      should listen from incoming messages with `core.register_on_modchannel_message`
+      call to receive incoming messages. Warning, this function is asynchronous.
+
+### Particles
+* `core.add_particle(particle definition)`
+
+* `core.add_particlespawner(particlespawner definition)`
+    * Add a `ParticleSpawner`, an object that spawns an amount of particles over `time` seconds
+    * Returns an `id`, and -1 if adding didn't succeed
+
+* `core.delete_particlespawner(id)`
+    * Delete `ParticleSpawner` with `id` (return value from `core.add_particlespawner`)
 
 ### Misc.
-* `minetest.parse_json(string[, nullvalue])`: returns something
+* `core.parse_json(string[, nullvalue])`: returns something
     * Convert a string containing JSON data into the Lua equivalent
     * `nullvalue`: returned in place of the JSON null; defaults to `nil`
     * On success returns a table, a string, a number, a boolean or `nullvalue`
     * On failure outputs an error message and returns `nil`
     * Example: `parse_json("[10, {\"a\":false}]")`, returns `{10, {a = false}}`
-* `minetest.write_json(data[, styled])`: returns a string or `nil` and an error message
+* `core.write_json(data[, styled])`: returns a string or `nil` and an error message
     * Convert a Lua table into a JSON string
     * styled: Outputs in a human-readable format if this is set, defaults to false
     * Unserializable things like functions and userdata are saved as null.
     * **Warning**: JSON is more strict than the Lua table format.
         1. You can only use strings and positive integers of at least one as keys.
-        2. You can not mix string and integer keys.
+        2. You cannot mix string and integer keys.
            This is due to the fact that JSON has two distinct array and object values.
     * Example: `write_json({10, {a = false}})`, returns `"[10, {\"a\": false}]"`
-* `minetest.serialize(table)`: returns a string
+* `core.serialize(table)`: returns a string
     * Convert a table containing tables, strings, numbers, booleans and `nil`s
-      into string form readable by `minetest.deserialize`
+      into string form readable by `core.deserialize`
     * Example: `serialize({foo='bar'})`, returns `'return { ["foo"] = "bar" }'`
-* `minetest.deserialize(string)`: returns a table
-    * Convert a string returned by `minetest.deserialize` into a table
+* `core.deserialize(string)`: returns a table
+    * Convert a string returned by `core.deserialize` into a table
     * `string` is loaded in an empty sandbox environment.
     * Will load functions, but they cannot access the global environment.
     * Example: `deserialize('return { ["foo"] = "bar" }')`, returns `{foo='bar'}`
     * Example: `deserialize('print("foo")')`, returns `nil` (function call fails)
         * `error:[string "print("foo")"]:1: attempt to call global 'print' (a nil value)`
-* `minetest.compress(data, method, ...)`: returns `compressed_data`
+* `core.compress(data, method, ...)`: returns `compressed_data`
     * Compress a string of data.
     * `method` is a string identifying the compression method to be used.
     * Supported compression methods:
-    *     Deflate (zlib): `"deflate"`
-    * `...` indicates method-specific arguments.  Currently defined arguments are:
-    *     Deflate: `level` - Compression level, `0`-`9` or `nil`.
-* `minetest.decompress(compressed_data, method, ...)`: returns data
-    * Decompress a string of data (using ZLib).
-    * See documentation on `minetest.compress()` for supported compression methods.
-    * currently supported.
-    * `...` indicates method-specific arguments. Currently, no methods use this.
-* `minetest.encode_base64(string)`: returns string encoded in base64
+        * Deflate (zlib): `"deflate"`
+        * Deflate (raw): `"raw_deflate"`
+        * Zstandard: `"zstd"`
+    * `...` indicates method-specific arguments. Currently defined arguments
+      are:
+        * Deflate: `level` - Compression level, `0`-`9` or `nil`.
+          Supported by `"deflate"` and `"raw_deflate"`.
+        * Zstandard: `level` - Compression level. Integer or `nil`. Default `3`.
+        Note any supported Zstandard compression level could be used here,
+        but these are subject to change between Zstandard versions.
+* `core.decompress(compressed_data, method, ...)`: returns data
+    * Decompress a string of data using the algorithm specified by `method`.
+    * See documentation on `core.compress()` for supported compression
+      methods.
+    * `...` indicates method-specific arguments. Currently, no methods use this
+* `core.rgba(red, green, blue[, alpha])`: returns a string
+    * Each argument is an 8 Bit unsigned integer
+    * Returns the ColorString from rgb or rgba values
+    * Example: `core.rgba(10, 20, 30, 40)`, returns `"#0A141E28"`
+* `core.encode_base64(string)`: returns string encoded in base64
     * Encodes a string in base64.
-* `minetest.decode_base64(string)`: returns string
+* `core.decode_base64(string)`: returns string or nil on failure
+    * Padding characters are only supported starting at version 5.4.0, where
+      5.5.0 and newer perform proper checks.
     * Decodes a string encoded in base64.
-* `core.gettext(string) : returns string
+* `core.gettext(string)` : returns string
     * look up the translation of a string in the gettext message catalog
 * `fgettext_ne(string, ...)`
     * call core.gettext(string), replace "$1"..."$9" with the given
       extra arguments and return the result
 * `fgettext(string, ...)` : returns string
     * same as fgettext_ne(), but calls core.formspec_escape before returning result
+* `core.pointed_thing_to_face_pos(placer, pointed_thing)`: returns a position
+    * returns the exact position on the surface of a pointed node
+* `core.global_exists(name)`
+    * Checks if a global variable has been set, without triggering a warning.
 
 ### UI
-* `minetest.ui.minimap`
-    * Reference to the minimap object. See `Minimap` class reference for methods.
-* `show_formspec(formname, formspec)` : returns true on success
-	* Shows a formspec to the player
+* `core.ui.minimap`
+    * Reference to the minimap object. See [`Minimap`](#minimap) class reference for methods.
+    * If client disabled minimap (using enable_minimap setting) this reference will be nil.
+* `core.camera`
+    * Reference to the camera object. See [`Camera`](#camera) class reference for methods.
+* `core.show_formspec(formname, formspec)` : returns true on success
+    * Shows a formspec to the player
+* `core.display_chat_message(message)` returns true on success
+    * Shows a chat message to the current player.
+
+Setting-related
+---------------
+
+* `core.settings`: Settings object containing all of the settings from the
+  main config file (`minetest.conf`). Check lua_api.md for class reference.
+* `core.setting_get_pos(name)`: Loads a setting from the main settings and
+  parses it as a position (in the format `(1,2,3)`). Returns a position or nil.
 
 Class reference
 ---------------
 
-### `Minimap`
+### ModChannel
+
+An interface to use mod channels on client and server
+
+#### Methods
+* `leave()`: leave the mod channel.
+    * Client leaves channel `channel_name`.
+    * No more incoming or outgoing messages can be sent to this channel from client mods.
+    * This invalidate all future object usage
+    * Ensure your set mod_channel to nil after that to free Lua resources
+* `is_writeable()`: returns true if channel is writable and mod can send over it.
+* `send_all(message)`: Send `message` though the mod channel.
+    * If mod channel is not writable or invalid, message will be dropped.
+    * Message size is limited to 65535 characters by protocol.
+
+### Minimap
 An interface to manipulate minimap on client UI
 
+#### Methods
 * `show()`: shows the minimap (if not disabled by server)
 * `hide()`: hides the minimap
 * `set_pos(pos)`: sets the minimap position on screen
@@ -812,9 +639,188 @@ An interface to manipulate minimap on client UI
 * `get_angle()`: returns the current minimap angle in degrees
 * `set_mode(mode)`: sets the minimap mode (0 to 6)
 * `get_mode()`: returns the current minimap mode
-* `toggle_shape()`: toggles minimap shape to round or square.
+* `set_shape(shape)`: Sets the minimap shape. (0 = square, 1 = round)
+* `get_shape()`: Gets the minimap shape. (0 = square, 1 = round)
 
-### `Settings`
+### Camera
+An interface to get or set information about the camera and camera-node.
+Please do not try to access the reference until the camera is initialized, otherwise the reference will be nil.
+
+#### Methods
+* `set_camera_mode(mode)`
+    * Pass `0` for first-person, `1` for third person, and `2` for third person front
+* `get_camera_mode()`
+    * Returns 0, 1, or 2 as described above
+* `get_fov()`
+    * Returns a table with X, Y, maximum and actual FOV in degrees:
+
+        ```lua
+        {
+            x = number,
+            y = number,
+            max = number,
+            actual = number
+        }
+        ```
+
+* `get_pos()`
+    * Returns position of camera with view bobbing
+* `get_offset()`
+    * Returns eye offset vector
+* `get_look_dir()`
+    * Returns eye direction unit vector
+* `get_look_vertical()`
+    * Returns pitch in radians
+* `get_look_horizontal()`
+    * Returns yaw in radians
+* `get_aspect_ratio()`
+    * Returns aspect ratio of screen
+
+### LocalPlayer
+An interface to retrieve information about the player.
+This object will only be available after the client is initialized. Earlier accesses will yield a `nil` value.
+
+Methods:
+
+* `get_pos()`
+    * returns current player current position
+* `get_velocity()`
+    * returns player speed vector
+* `get_hp()`
+    * returns player HP
+* `get_name()`
+    * returns player name
+* `get_wield_index()`
+    * returns the index of the wielded item
+* `get_wielded_item()`
+    * returns the itemstack the player is holding
+* `is_attached()`
+    * returns true if player is attached
+* `is_touching_ground()`
+    * returns true if player touching ground
+* `is_in_liquid()`
+    * returns true if player is in a liquid (This oscillates so that the player jumps a bit above the surface)
+* `is_in_liquid_stable()`
+    * returns true if player is in a stable liquid (This is more stable and defines the maximum speed of the player)
+* `get_move_resistance()`
+    * returns move resistance of current node, the higher the slower the player moves
+* `is_climbing()`
+    * returns true if player is climbing
+* `swimming_vertical()`
+    * returns true if player is swimming in vertical
+* `get_physics_override()`
+    * returns:
+
+        ```lua
+        {
+            speed = float,
+            speed_climb = float,
+            speed_crouch = float,
+            speed_fast = float,
+            speed_walk = float,
+            acceleration_default = float,
+            acceleration_air = float,
+            acceleration_fast = float,
+            jump = float,
+            gravity = float,
+            liquid_fluidity = float,
+            liquid_fluidity_smooth = float,
+            liquid_sink = float,
+            sneak = boolean,
+            sneak_glitch = boolean,
+            new_move = boolean,
+        }
+        ```
+
+* `get_override_pos()`
+    * returns override position
+* `get_last_pos()`
+    * returns last player position before the current client step
+* `get_last_velocity()`
+    * returns last player speed
+* `get_breath()`
+    * returns the player's breath
+* `get_movement_acceleration()`
+    * returns acceleration of the player in different environments
+      (note: does not take physics overrides into account):
+
+        ```lua
+        {
+            fast = float,
+            air = float,
+            default = float,
+        }
+        ```
+
+* `get_movement_speed()`
+    * returns player's speed in different environments
+      (note: does not take physics overrides into account):
+
+        ```lua
+        {
+            walk = float,
+            jump = float,
+            crouch = float,
+            fast = float,
+            climb = float,
+        }
+        ```
+
+* `get_movement()`
+    * returns player's movement in different environments
+      (note: does not take physics overrides into account):
+
+        ```lua
+        {
+            liquid_fluidity = float,
+            liquid_sink = float,
+            liquid_fluidity_smooth = float,
+            gravity = float,
+        }
+        ```
+
+* `get_last_look_horizontal()`:
+    * returns last look horizontal angle
+* `get_last_look_vertical()`:
+    * returns last look vertical angle
+* `get_control()`:
+    * returns pressed player controls
+
+        ```lua
+        {
+            up = boolean,
+            down = boolean,
+            left = boolean,
+            right = boolean,
+            jump = boolean,
+            aux1 = boolean,
+            sneak = boolean,
+            zoom = boolean,
+            dig = boolean,
+            place = boolean,
+        }
+        ```
+
+* `get_armor_groups()`
+    * returns a table with the armor group ratings
+    * It can return `nil` if the player CAO is not yet initialized.
+* `hud_add(definition)`
+    * add a HUD element described by HUD def, returns ID number on success and `nil` on failure.
+    * See [`HUD definition`](#hud-definition-hud_add-hud_get)
+* `hud_get(id)`
+    * returns the [`definition`](#hud-definition-hud_add-hud_get) of the HUD with that ID number or `nil`, if non-existent.
+* `hud_get_all()`:
+    * Returns a table in the form `{ [id] = HUD definition, [id] = ... }`.
+    * A mod should keep track of its introduced IDs and only use this to access foreign elements.
+    * It is discouraged to change foreign HUD elements.
+* `hud_remove(id)`
+    * remove the HUD element of the specified id, returns `true` on success
+* `hud_change(id, stat, value)`
+    * change a value of a previously added HUD element
+    * element `stat` values: `position`, `name`, `scale`, `text`, `number`, `item`, `dir`
+    * Returns `true` on success, otherwise returns `nil`
+
+### Settings
 An interface to read config files in the format of `minetest.conf`.
 
 It can be created via `Settings(filename)`.
@@ -829,49 +835,234 @@ It can be created via `Settings(filename)`.
     * write changes to file
 * `to_table()`: returns `{[key1]=value1,...}`
 
-Definition tables
+### NodeMetaRef
+Node metadata: reference extra data and functionality stored in a node.
+Can be obtained via `core.get_meta(pos)`.
+
+#### Methods
+* `get_string(name)`
+* `get_int(name)`
+* `get_float(name)`
+* `to_table()`: returns `nil` or a table with keys:
+    * `fields`: key-value storage
+    * `inventory`: `{list1 = {}, ...}}`
+
+### `Raycast`
+
+A raycast on the map. It works with selection boxes.
+Can be used as an iterator in a for loop as:
+
+```lua
+local ray = Raycast(...)
+for pointed_thing in ray do
+    ...
+end
+```
+
+The map is loaded as the ray advances. If the map is modified after the
+`Raycast` is created, the changes may or may not have an effect on the object.
+
+It can be created via `Raycast(pos1, pos2, objects, liquids)` or
+`core.raycast(pos1, pos2, objects, liquids)` where:
+
+* `pos1`: start of the ray
+* `pos2`: end of the ray
+* `objects`: if false, only nodes will be returned. Default is true.
+* `liquids`: if false, liquid nodes won't be returned. Default is false.
+
+#### Methods
+
+* `next()`: returns a `pointed_thing` with exact pointing location
+    * Returns the next thing pointed by the ray or nil.
+
+-----------------
+### Definitions
+* `core.get_node_def(nodename)`
+    * Returns [node definition](#node-definition) table of `nodename`
+* `core.get_item_def(itemstring)`
+    * Returns item definition table of `itemstring`
+
+#### Node Definition
+
+```lua
+{
+    has_on_construct = bool,        -- Whether the node has the on_construct callback defined
+    has_on_destruct = bool,         -- Whether the node has the on_destruct callback defined
+    has_after_destruct = bool,      -- Whether the node has the after_destruct callback defined
+    name = string,                  -- The name of the node e.g. "air", "default:dirt"
+    groups = table,                 -- The groups of the node
+    paramtype = string,             -- Paramtype of the node
+    paramtype2 = string,            -- ParamType2 of the node
+    drawtype = string,              -- Drawtype of the node
+    mesh = <string>,                -- Mesh name if existent
+    tiles = {tile definition, ...},         -- 6 base tiles, entries may be nil
+    overlay_tiles = {tile definition, ...}, -- 6 overlay tiles, drawn over the base tiles, entries may be nil
+    special_tiles = {tile definition, ...}, -- Special tiles, amount varies by drawtype, entries may be nil
+    minimap_color = <Color>,        -- Color of node on minimap *May not exist*
+    visual_scale = number,          -- Visual scale of node
+    alpha = number,                 -- Raw AlphaMode enum ordinal (0=blend, 1=clip, 2=opaque)
+    use_texture_alpha = string,     -- "blend", "clip" or "opaque"
+    color = <Color>,                -- Color of node *May not exist*
+    palette = <string>,             -- Filename of palette *May not exist*
+    palette_colors = <{             -- List of colors or nil if not available
+        Color,
+        Color
+    }>,
+    waving = number,                -- 0 of not waving, 1 if waving
+    connect_sides = number,         -- Used for connected nodes
+    connects_to = {                 -- List of nodes to connect to
+        "node1",
+        "node2"
+    },
+    post_effect_color = Color,      -- Color overlaid on the screen when the player is in the node
+    leveled = number,               -- Max level for node
+    sunlight_propogates = bool,     -- Whether light passes through the block
+    light_source = number,          -- Light emitted by the block
+    is_ground_content = bool,       -- Whether caves should cut through the node
+    walkable = bool,                -- Whether the player collides with the node
+    pointable = bool,               -- Whether the player can select the node
+    diggable = bool,                -- Whether the player can dig the node
+    climbable = bool,               -- Whether the player can climb up the node
+    buildable_to = bool,            -- Whether the player can replace the node by placing a node on it
+    rightclickable = bool,          -- Whether the player can place nodes pointing at this node
+    damage_per_second = number,     -- HP of damage per second when the player is in the node
+    liquid_type = <string>,         -- A string containing "none", "flowing", or "source" *May not exist*
+    liquid_alternative_flowing = <string>, -- Alternative node for liquid *May not exist*
+    liquid_alternative_source = <string>, -- Alternative node for liquid *May not exist*
+    liquid_viscosity = <number>,    -- How slow the liquid flows *May not exist*
+    liquid_renewable = <boolean>,   -- Whether the liquid makes an infinite source *May not exist*
+    liquid_range = <number>,        -- How far the liquid flows *May not exist*
+    drowning = bool,                -- Whether the player will drown in the node
+    floodable = bool,               -- Whether nodes will be replaced by liquids (flooded)
+    node_box = table,               -- Nodebox to draw the node with
+    collision_box = table,          -- Nodebox to set the collision area
+    selection_box = table,          -- Nodebox to set the area selected by the player
+    sounds = {                      -- Table of sounds that the block makes
+        sound_footstep = SimpleSoundSpec,
+        sound_dig = SimpleSoundSpec,
+        sound_dug = SimpleSoundSpec
+    },
+    legacy_facedir_simple = bool,   -- Whether to use old facedir
+    legacy_wallmounted = bool       -- Whether to use old wallmounted
+    move_resistance = <number>,     -- How slow players can move through the node *May not exist*
+}
+```
+
+#### Tile Definition
+
+`nil` if the tile is unset.
+
+```lua
+{
+    name = string,                  -- Texture name
+    backface_culling = bool,        -- Whether the tile's backface is culled
+    tileable_horizontal = bool,     -- Whether the tile is horizontally tileable
+    tileable_vertical = bool,       -- Whether the tile is vertically tileable
+    color = <Color>,                -- Tile color *May not exist*
+    align_style = string,           -- "node", "world" or "user"
+    scale = number,                 -- Scale of the tile
+    animation = {                   -- Tile animation parameters *May not exist*
+        type = string,              -- "vertical_frames" or "sheet_2d"
+        -- if type == "vertical_frames":
+        aspect_w = number,
+        aspect_h = number,
+        length = number,
+        -- if type == "sheet_2d":
+        frames_w = number,
+        frames_h = number,
+        frame_length = number,
+    },
+}
+```
+
+#### Item Definition
+
+```lua
+{
+    name = string,                  -- Name of the item e.g. "default:stone"
+    description = string,           -- Description of the item e.g. "Stone"
+    type = string,                  -- Item type: "none", "node", "craftitem", "tool"
+    inventory_image = string,       -- Image in the inventory
+    wield_image = string,           -- Image in wieldmesh
+    palette_image = string,         -- Image for palette
+    color = Color,                  -- Color for item
+    wield_scale = Vector,           -- Wieldmesh scale
+    stack_max = number,             -- Number of items stackable together
+    range = number,                 -- Range of node/object pointing
+    usable = bool,                  -- Has on_use callback defined
+    liquids_pointable = bool,       -- Whether you can point at liquids with the item
+    tool_capabilities = <table>,    -- If the item is a tool, tool capabilities of the item
+    groups = table,                 -- Groups of the item
+    sound_place = SimpleSoundSpec,  -- Sound played when placed
+    sound_place_failed = SimpleSoundSpec, -- Sound played when placement failed
+    node_placement_prediction = string -- Node placed in client until server catches up
+}
+```
 -----------------
 
 ### Chat command definition (`register_chatcommand`)
 
-    {
-        params = "<name> <privilege>", -- Short parameter description
-        description = "Remove privilege from player", -- Full description
-        privs = {privs=true}, -- Require the "privs" privilege to run
-        func = function(name, param), -- Called when command is run.
-                                      -- Returns boolean success and text output.
-    }
+```lua
+{
+    params = "<name> <privilege>", -- Short parameter description
+    description = "Remove privilege from player", -- Full description
+    func = function(param),        -- Called when command is run.
+                                   -- Returns boolean success and text output.
+}
+```
+
+### Server info
+
+```lua
+{
+    address = "luanti.example.org",   -- The domain name/IP address of a remote server or "" for a local server.
+    ip = "203.0.113.156",             -- The IP address of the server.
+    port = 30000,                     -- The port the client is connected to.
+    protocol_version = 30             -- Will not be accurate at start up as the client might not be connected to the server yet, in that case it will be 0.
+}
+```
+
+### HUD Definition (`hud_add`, `hud_get`)
+
+Refer to `lua_api.md`.
 
 Escape sequences
 ----------------
-Most text can contain escape sequences, that can for example color the text.
+Most text can contain escape sequences that can for example color the text.
 There are a few exceptions: tab headers, dropdowns and vertical labels can't.
 The following functions provide escape sequences:
 * `core.get_color_escape_sequence(color)`:
-    * `color` is a ColorString
+    * `color` is a [ColorString](#colorstring)
     * The escape sequence sets the text color to `color`
 * `core.colorize(color, message)`:
     * Equivalent to:
       `core.get_color_escape_sequence(color) ..
        message ..
        core.get_color_escape_sequence("#ffffff")`
-* `color.get_background_escape_sequence(color)`
-    * `color` is a ColorString
+* `core.get_background_escape_sequence(color)`
+    * `color` is a [ColorString](#colorstring)
     * The escape sequence sets the background of the whole text element to
       `color`. Only defined for item descriptions and tooltips.
-	  
+* `core.strip_foreground_colors(str)`
+    * Removes foreground colors added by `get_color_escape_sequence`.
+* `core.strip_background_colors(str)`
+    * Removes background colors added by `get_background_escape_sequence`.
+* `core.strip_colors(str)`
+    * Removes all color escape sequences.
+
 `ColorString`
 -------------
-`#RGB` defines a color in hexadecimal format.
 
-`#RGBA` defines a color in hexadecimal format and alpha channel.
+Refer to `lua_api.md`.
 
-`#RRGGBB` defines a color in hexadecimal format.
+`Color`
+-------------
+`{a = alpha, r = red, g = green, b = blue}` defines an ARGB8 color.
 
-`#RRGGBBAA` defines a color in hexadecimal format and alpha channel.
+### Particle definition (`add_particle`)
 
-Named colors are also supported and are equivalent to
-[CSS Color Module Level 4](http://dev.w3.org/csswg/css-color/#named-colors).
-To specify the value of the alpha channel, append `#AA` to the end of the color name
-(e.g. `colorname#08`). For named colors the hexadecimal string representing the alpha
-value must (always) be two hexadecima
+As documented in `lua_api.md`, except for obvious reasons, the `playername` field is not supported.
+
+### `ParticleSpawner` definition (`add_particlespawner`)
+
+As documented in `lua_api.md`, except for obvious reasons, the `playername` field is not supported.

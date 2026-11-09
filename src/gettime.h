@@ -1,63 +1,41 @@
-/*
-Minetest
-Copyright (C) 2013 celeron55, Perttu Ahola <celeron55@gmail.com>
+// Luanti
+// SPDX-License-Identifier: LGPL-2.1-or-later
+// Copyright (C) 2013 celeron55, Perttu Ahola <celeron55@gmail.com>
 
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU Lesser General Public License as published by
-the Free Software Foundation; either version 2.1 of the License, or
-(at your option) any later version.
+#pragma once
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Lesser General Public License for more details.
-
-You should have received a copy of the GNU Lesser General Public License along
-with this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
-*/
-
-#ifndef GETTIME_HEADER
-#define GETTIME_HEADER
-
-#include "irrlichttypes.h"
-
-/*
-	Get a millisecond counter value.
-	Precision depends on implementation.
-	Overflows at any value above 10000000.
-
-	Implementation of this is done in:
-		Normal build: main.cpp
-		Server build: servermain.cpp
-*/
-enum TimePrecision {
-	PRECISION_SECONDS = 0,
-	PRECISION_MILLI,
-	PRECISION_MICRO,
-	PRECISION_NANO
-};
-
-extern u32 getTimeMs();
-extern u32 getTime(TimePrecision prec);
-
-/*
-	Timestamp stuff
-*/
-
-#include <time.h>
+#include <ctime>
 #include <string>
+#include <mutex>
 
-inline std::string getTimestamp()
+inline struct tm mt_localtime()
 {
+	// initialize the time zone on first invocation
+	static std::once_flag tz_init;
+	std::call_once(tz_init, [] {
+#ifdef _WIN32
+		_tzset();
+#else
+		tzset();
+#endif
+		});
+
+	struct tm ret{};
 	time_t t = time(NULL);
-	// This is not really thread-safe but it won't break anything
-	// except its own output, so just go with it.
-	struct tm *tm = localtime(&t);
-	char cs[20]; //YYYY-MM-DD HH:MM:SS + '\0'
-	strftime(cs, 20, "%Y-%m-%d %H:%M:%S", tm);
-	return cs;
+	// TODO we should check if the function returns NULL, which would mean error
+#ifdef _WIN32
+	localtime_s(&ret, &t);
+#else
+	localtime_r(&t, &ret);
+#endif
+	return ret;
 }
 
 
-#endif
+inline std::string getTimestamp()
+{
+	const struct tm tm = mt_localtime();
+	char cs[20]; // YYYY-MM-DD HH:MM:SS + '\0'
+	strftime(cs, 20, "%Y-%m-%d %H:%M:%S", &tm);
+	return cs;
+}

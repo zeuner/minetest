@@ -1,122 +1,157 @@
-/*
-Minetest
-Copyright (C) 2013 sapier, <sapier AT gmx DOT net>
+// Luanti
+// SPDX-License-Identifier: LGPL-2.1-or-later
+// Copyright (C) 2013 sapier, <sapier AT gmx DOT net>
 
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU Lesser General Public License as published by
-the Free Software Foundation; either version 2.1 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Lesser General Public License for more details.
-
-You should have received a copy of the GNU Lesser General Public License along
-with this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
-*/
-
-#ifndef CPP_API_ASYNC_EVENTS_HEADER
-#define CPP_API_ASYNC_EVENTS_HEADER
+#pragma once
 
 #include <vector>
 #include <deque>
-#include <map>
+#include <unordered_set>
+#include <memory>
 
-#include "threading/thread.h"
-#include "threading/mutex.h"
+#include <lua.h>
 #include "threading/semaphore.h"
-#include "debug.h"
-#include "lua.h"
+#include "threading/thread.h"
+#include "common/c_packer.h"
 #include "cpp_api/s_base.h"
+#include "cpp_api/s_security.h"
 
-// Forward declarations
 class AsyncEngine;
-
-
-// Declarations
+class ScriptApiAsync;
 
 // Data required to queue a job
-struct LuaJobInfo {
-	// Function to be called in async environment
-	std::string serializedFunction;
-	// Parameter to be passed to function
-	std::string serializedParams;
-	// Result of function call
-	std::string serializedResult;
-	// JobID used to identify a job and match it to callback
-	unsigned int id;
+struct LuaJobInfo
+{
+	LuaJobInfo() = default;
+	LuaJobInfo(std::string &&func, PackedValue *params, const std::string &mod_origin = "") :
+		function(func), mod_origin(mod_origin) {
+		params_ext.reset(params);
+	}
 
-	bool valid;
+	// Function to be called in async environment (from string.dump)
+	std::string function;
+	// Parameter to be passed to function
+	std::unique_ptr<PackedValue> params_ext;
+	// Result of function call
+	std::unique_ptr<PackedValue> result_ext;
+	// Name of the mod who invoked this call
+	std::string mod_origin;
+	// JobID used to identify a job and match it to callback
+	u32 id;
 };
 
 // Asynchronous working environment
-class AsyncWorkerThread : public Thread, public ScriptApiBase {
+class AsyncWorkerThread : public Thread,
+	virtual public ScriptApiBase, public ScriptApiSecurity {
+	friend class AsyncEngine;
 public:
-	AsyncWorkerThread(AsyncEngine* jobDispatcher, const std::string &name);
 	virtual ~AsyncWorkerThread();
 
-	void *run();
+	void *run() override;
+
+protected:
+	AsyncWorkerThread(AsyncEngine* jobDispatcher, const std::string &name);
+
+	bool checkPathInternal(const std::string &abs_path, bool write_required,
+		bool *write_allowed) override;
 
 private:
-	AsyncEngine *jobDispatcher;
+	AsyncEngine *jobDispatcher = nullptr;
+	bool isErrored = false;
 };
 
-// Asynchornous thread and job management
+// Asynchronous thread and job management
 class AsyncEngine {
 	friend class AsyncWorkerThread;
+	typedef void (*StateInitializer)(lua_State *L, int top);
 public:
-	AsyncEngine();
+	AsyncEngine(ScriptApiAsync *parent) : parent(parent) {};
 	~AsyncEngine();
 
 	/**
-	 * Register function to be used within engine
-	 * @param name Function name to be used within Lua environment
+	 * Register function to be called on new states
 	 * @param func C function to be called
 	 */
-	bool registerFunction(const char* name, lua_CFunction func);
+	void registerStateInitializer(StateInitializer func);
 
 	/**
-	 * Create async engine tasks and lock function registration
-	 * @param numEngines Number of async threads to be started
+	 * Create async engine tasks
+	 * @param num_engines Number of worker threads, 0 for automatic scaling
+	 * @param init_type String to set as 'INIT'
+	 * @param enable_security Enable mod security in workers?
 	 */
-	void initialize(unsigned int numEngines);
+	void initialize(unsigned int num_engines, const char *init_type, bool enable_security);
 
 	/**
 	 * Queue an async job
 	 * @param func Serialized lua function
-	 * @param params Serialized parameters
-	 * @return jobid The job is queued
+	 * @param params Serialized parameters (takes ownership!)
+	 * @return ID of queued job
 	 */
-	unsigned int queueAsyncJob(std::string func, std::string params);
+	u32 queueAsyncJob(std::string &&func, PackedValue *params,
+			const std::string &mod_origin = "");
+
+	/**
+	 * Try to cancel an async job
+	 * @param id The ID of the job
+	 * @return Whether the job was cancelled
+	 */
+	bool cancelAsyncJob(u32 id);
 
 	/**
 	 * Engine step to process finished jobs
-	 *   the engine step is one way to pass events back, PushFinishedJobs another
 	 * @param L The Lua stack
 	 */
 	void step(lua_State *L);
 
 	/**
-	 * Push a list of finished jobs onto the stack
-	 * @param L The Lua stack
+	 * Get the maximum number of threads that can be used by the async environment
 	 */
-	void pushFinishedJobs(lua_State *L);
+	unsigned int getThreadingCapacity() const {
+		return MYMAX(workerThreads.size(), autoscaleMaxWorkers);
+	}
 
 protected:
 	/**
 	 * Get a Job from queue to be processed
 	 *  this function blocks until a job is ready
-	 * @return a job to be processed
+	 * @param job a job to be processed
+	 * @return whether a job was available
 	 */
-	LuaJobInfo getJob();
+	bool getJob(LuaJobInfo *job);
+
+	/**
+	 * Queue an async job
+	 * @param job The job to queue (takes ownership!)
+	 * @return Id of the queued job
+	 */
+	u32 queueAsyncJob(LuaJobInfo &&job);
 
 	/**
 	 * Put a Job result back to result queue
 	 * @param result result of completed job
 	 */
-	void putJobResult(LuaJobInfo result);
+	void putJobResult(LuaJobInfo &&result);
+
+	/**
+	 * Start an additional worker thread
+	 */
+	void addWorkerThread();
+
+	/**
+	 * Process finished jobs callbacks
+	 */
+	void stepJobResults(lua_State *L);
+
+	/**
+	 * Handle automatic scaling of worker threads
+	 */
+	void stepAutoscale();
+
+	/**
+	 * Print warning message if too many jobs are stuck
+	 */
+	void stepStuckWarning();
 
 	/**
 	 * Initialize environment with current registred functions
@@ -124,27 +159,55 @@ protected:
 	 *  passed lua stack
 	 * @param L Lua stack to initialize
 	 * @param top Stack position
+	 * @return false if a mod error ocurred
 	 */
-	void prepareEnvironment(lua_State* L, int top);
+	bool prepareEnvironment(lua_State* L, int top);
 
 private:
-	// Variable locking the engine against further modification
-	bool initDone;
+	template <typename T>
+	inline void snapshotJobs(T &to)
+	{
+		for (const auto &it : jobQueue)
+			to.emplace(it.id);
+	}
+	template <typename T>
+	inline size_t compareJobs(const T &from)
+	{
+		size_t overlap = 0;
+		for (const auto &it : jobQueue)
+			overlap += from.count(it.id);
+		return overlap;
+	}
 
-	// Internal store for registred functions
-	UNORDERED_MAP<std::string, lua_CFunction> functionList;
+	bool initDone = false;
+	const char *initType = nullptr;
+	bool enableSecurity = false;
+
+	// Maximum number of worker threads for automatic scaling
+	// 0 if disabled
+	unsigned int autoscaleMaxWorkers = 0;
+	u64 autoscaleTimer = 0;
+	std::unordered_set<u32> autoscaleSeenJobs;
+
+	u64 stuckTimer = 0;
+	std::unordered_set<u32> stuckSeenJobs;
+
+	// Owning class
+	ScriptApiAsync *parent = nullptr;
+
+	// Internal store for registered state initializers
+	std::vector<StateInitializer> stateInitializers;
 
 	// Internal counter to create job IDs
-	unsigned int jobIdCounter;
+	u32 jobIdCounter = 0;
 
 	// Mutex to protect job queue
-	Mutex jobQueueMutex;
-
+	std::mutex jobQueueMutex;
 	// Job queue
 	std::deque<LuaJobInfo> jobQueue;
 
 	// Mutex to protect result queue
-	Mutex resultQueueMutex;
+	std::mutex resultQueueMutex;
 	// Result queue
 	std::deque<LuaJobInfo> resultQueue;
 
@@ -155,4 +218,39 @@ private:
 	Semaphore jobQueueCounter;
 };
 
-#endif // CPP_API_ASYNC_EVENTS_HEADER
+// The script context that owns the async engine derives from this class
+class ScriptApiAsync :
+	virtual public ScriptApiBase
+{
+	friend class AsyncEngine;
+	friend class AsyncWorkerThread;
+public:
+	ScriptApiAsync() : asyncEngine(this) {}
+
+	// Step handler that processes async results
+	void stepAsync();
+
+	u32 queueAsync(std::string &&serialized_func,
+			PackedValue *param, const std::string &mod_origin);
+	bool cancelAsync(u32 id);
+	unsigned int getThreadingCapacity() const {
+		return asyncEngine.getThreadingCapacity();
+	}
+
+protected:
+	/// @brief called when an error during async execution occurs
+	/// (needs to be thread-safe!)
+	virtual void reportAsyncError(const std::string &msg) = 0;
+
+	/// @brief called after builtin has been loaded
+	/// (needs to be thread-safe!)
+	/// @return true if ok, false on error
+	virtual bool onAsyncEnvSetup(ScriptApiBase *inner) { return true; };
+
+	/// @brief filesystem sandbox callback
+	/// (needs to be thread-safe!)
+	virtual bool checkPathInternal(const std::string &abs_path,
+		bool write_required, bool *write_allowed) = 0;
+
+	AsyncEngine asyncEngine;
+};

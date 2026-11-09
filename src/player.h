@@ -1,69 +1,56 @@
-/*
-Minetest
-Copyright (C) 2010-2013 celeron55, Perttu Ahola <celeron55@gmail.com>
+// Luanti
+// SPDX-License-Identifier: LGPL-2.1-or-later
+// Copyright (C) 2010-2013 celeron55, Perttu Ahola <celeron55@gmail.com>
 
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU Lesser General Public License as published by
-the Free Software Foundation; either version 2.1 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Lesser General Public License for more details.
-
-You should have received a copy of the GNU Lesser General Public License along
-with this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
-*/
-
-#ifndef PLAYER_HEADER
-#define PLAYER_HEADER
+#pragma once
 
 #include "irrlichttypes_bloated.h"
 #include "inventory.h"
-#include "threading/mutex.h"
-#include <list>
+#include "util/basic_macros.h"
+#include <memory>
+#include <string>
+#include <string_view>
+#include <array>
 
 #define PLAYERNAME_SIZE 20
 
 #define PLAYERNAME_ALLOWED_CHARS "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
 #define PLAYERNAME_ALLOWED_CHARS_USER_EXPL "'a' to 'z', 'A' to 'Z', '0' to '9', '-', '_'"
 
+bool is_valid_player_name(std::string_view name);
+
+struct PlayerFovSpec
+{
+	f32 fov;
+
+	// Whether to multiply the client's FOV or to override it
+	bool is_multiplier;
+
+	// The time to be take to transition to the new FOV value.
+	// Transition is instantaneous if omitted. Omitted by default.
+	f32 transition_time = 0;
+
+	inline bool operator==(const PlayerFovSpec &other) const {
+		// transition_time is compared here since that could be relevant
+		// when aborting a running transition.
+		return fov == other.fov && is_multiplier == other.is_multiplier &&
+			transition_time == other.transition_time;
+	}
+	inline bool operator!=(const PlayerFovSpec &other) const {
+		return !(*this == other);
+	}
+};
+
 struct PlayerControl
 {
-	PlayerControl()
-	{
-		up = false;
-		down = false;
-		left = false;
-		right = false;
-		jump = false;
-		aux1 = false;
-		sneak = false;
-		LMB = false;
-		RMB = false;
-		pitch = 0;
-		yaw = 0;
-		sidew_move_joystick_axis = .0f;
-		forw_move_joystick_axis = .0f;
-	}
+	PlayerControl() = default;
 
 	PlayerControl(
-		bool a_up,
-		bool a_down,
-		bool a_left,
-		bool a_right,
-		bool a_jump,
-		bool a_aux1,
-		bool a_sneak,
+		float a_up, float a_down, float a_left, float a_right,
+		bool a_jump, bool a_aux1, bool a_sneak,
 		bool a_zoom,
-		bool a_LMB,
-		bool a_RMB,
-		float a_pitch,
-		float a_yaw,
-		float a_sidew_move_joystick_axis,
-		float a_forw_move_joystick_axis
+		bool a_dig, bool a_place,
+		float a_pitch, float a_yaw
 	)
 	{
 		up = a_up;
@@ -74,74 +61,137 @@ struct PlayerControl
 		aux1 = a_aux1;
 		sneak = a_sneak;
 		zoom = a_zoom;
-		LMB = a_LMB;
-		RMB = a_RMB;
+		dig = a_dig;
+		place = a_place;
 		pitch = a_pitch;
 		yaw = a_yaw;
-		sidew_move_joystick_axis = a_sidew_move_joystick_axis;
-		forw_move_joystick_axis = a_forw_move_joystick_axis;
 	}
-	bool up;
-	bool down;
-	bool left;
-	bool right;
-	bool jump;
-	bool aux1;
-	bool sneak;
-	bool zoom;
-	bool LMB;
-	bool RMB;
-	float pitch;
-	float yaw;
-	float sidew_move_joystick_axis;
-	float forw_move_joystick_axis;
+
+	// Sets movement_speed and movement_direction according to direction_keys
+	// if direction_keys != 0, otherwise leaves them unchanged to preserve
+	// joystick input.
+	void setMovementFromKeys();
+
+	// For client use
+	u32 getKeysPressed() const;
+	inline bool isMoving() const { return movement_speed > 0.001f; }
+
+	// For server use
+	void unpackKeysPressed(u32 keypress_bits);
+	v2f getMovement() const;
+
+	float up = 0;
+	float down = 0;
+	float left = 0;
+	float right = 0;
+	bool jump = false;
+	bool aux1 = false;
+	bool sneak = false;
+	bool zoom = false;
+	bool dig = false;
+	bool place = false;
+	// Note: These two are NOT available on the server
+	float pitch = 0.0f;
+	float yaw = 0.0f;
+	float movement_speed = 0.0f;
+	float movement_direction = 0.0f;
 };
 
-class Map;
-struct CollisionInfo;
-struct HudElement;
-class Environment;
+struct PlayerPhysicsOverride
+{
+	float speed = 1.f;
+	float jump = 1.f;
+	float gravity = 1.f;
 
-// IMPORTANT:
-// Do *not* perform an assignment or copy operation on a Player or
-// RemotePlayer object!  This will copy the lock held for HUD synchronization
+	bool sneak = true;
+	bool sneak_glitch = false;
+	// "Temporary" option for old move code
+	bool new_move = true;
+
+	float speed_climb = 1.f;
+	float speed_crouch = 1.f;
+	float liquid_fluidity = 1.f;
+	float liquid_fluidity_smooth = 1.f;
+	float liquid_sink = 1.f;
+	float acceleration_default = 1.f;
+	float acceleration_air = 1.f;
+	float speed_fast = 1.f;
+	float acceleration_fast = 1.f;
+	float speed_walk = 1.f;
+
+	bool operator==(const PlayerPhysicsOverride &other) const;
+	bool operator!=(const PlayerPhysicsOverride &other) const {
+		return !(*this == other);
+	}
+};
+
+struct HudElement;
+
+struct PlayerHud
+{
+	const auto &getElements() const { return m_elements; }
+	/// Returns `nullptr` if not found
+	HudElement *get(u32 id);
+	/// Returns the ID of the added element
+	u32         add(std::unique_ptr<HudElement> e);
+	/// Returns whether removal succeeded
+	bool        remove(u32 id);
+	void        clear();
+
+private:
+	u32 getFreeID();
+
+	std::vector<std::unique_ptr<HudElement>> m_elements;
+};
+
+/// @note numeric values are part of network protocol
+enum CameraMode : int {
+	// not a mode. indicates that any may be used.
+	CAMERA_MODE_ANY = 0,
+	CAMERA_MODE_FIRST,
+	CAMERA_MODE_THIRD,
+	CAMERA_MODE_THIRD_FRONT,
+
+	CameraMode_END // Dummy for validity check
+};
+
+extern const struct EnumString es_CameraMode[];
+
+// Note: Part of the protocol, do not reorder.
+enum class LocalPlayerAnimation : u8
+{
+	NO_ANIM,
+	WALK_ANIM,
+	DIG_ANIM,
+	WD_ANIM, // walking + digging
+	COUNT
+};
+
 class Player
 {
 public:
 
-	Player(const char *name, IItemDefManager *idef);
+	Player(const std::string &name, const IItemDefManager *idef);
 	virtual ~Player() = 0;
 
-	virtual void move(f32 dtime, Environment *env, f32 pos_max_d)
-	{}
-	virtual void move(f32 dtime, Environment *env, f32 pos_max_d,
-			std::vector<CollisionInfo> *collision_info)
-	{}
+	DISABLE_CLASS_COPY(Player);
 
-	v3f getSpeed()
-	{
-		return m_speed;
-	}
-
-	void setSpeed(v3f speed)
+	// in BS-space
+	inline void setSpeed(v3f speed)
 	{
 		m_speed = speed;
 	}
 
-	const char *getName() const { return m_name; }
+	// in BS-space
+	v3f getSpeed() const { return m_speed; }
 
-	u32 getFreeHudID()
-	{
-		size_t size = hud.size();
-		for (size_t i = 0; i != size; i++) {
-			if (!hud[i])
-				return i;
-		}
-		return size;
-	}
+	const std::string& getName() const { return m_name; }
+
+	CameraMode allowed_camera_mode = CAMERA_MODE_ANY;
 
 	v3f eye_offset_first;
 	v3f eye_offset_third;
+	v3f eye_offset_third_front;
 
 	Inventory inventory;
 
@@ -158,36 +208,49 @@ public:
 	f32 movement_liquid_sink;
 	f32 movement_gravity;
 
-	v2s32 local_animations[4];
+	/// Animation frame ranges for different local player animation "states".
+	/// @note Frames are into the first animation track of a model.
+	/// @note A range of [0, 0] is used to denote an absent local animation.
+	std::array<v2f, (size_t) LocalPlayerAnimation::COUNT> local_animations;
 	float local_animation_speed;
 
-	u16 peer_id;
-
 	std::string inventory_formspec;
+	std::string formspec_prepend;
 
 	PlayerControl control;
 	const PlayerControl& getPlayerControl() { return control; }
 
-	u32 keyPressed;
+	PlayerPhysicsOverride physics_override;
 
-	HudElement* getHud(u32 id);
-	u32         addHud(HudElement* hud);
-	HudElement* removeHud(u32 id);
-	void        clearHud();
+	// Returns non-empty `selected` ItemStack. `hand` is a fallback, if specified
+	ItemStack &getWieldedItem(ItemStack *selected, ItemStack *hand) const;
+	void setWieldIndex(u16 index);
+	u16 getWieldIndex();
+
+	bool setFov(const PlayerFovSpec &spec)
+	{
+		if (m_fov_override_spec == spec)
+			return false;
+		m_fov_override_spec = spec;
+		return true;
+	}
+
+	const PlayerFovSpec &getFov() const
+	{
+		return m_fov_override_spec;
+	}
+
+	PlayerHud hud;
 
 	u32 hud_flags;
 	s32 hud_hotbar_itemcount;
+
+	// Get actual usable number of hotbar items (clamped to size of "main" list)
+	u16 getMaxHotbarItemcount();
+
 protected:
-	char m_name[PLAYERNAME_SIZE];
-	v3f m_speed;
-
-	std::vector<HudElement *> hud;
-private:
-	// Protect some critical areas
-	// hud for example can be modified by EmergeThread
-	// and ServerThread
-	Mutex m_mutex;
+	std::string m_name;
+	v3f m_speed; // velocity; in BS-space
+	u16 m_wield_index = 0;
+	PlayerFovSpec m_fov_override_spec = { 0.0f, false, 0.0f };
 };
-
-#endif
-

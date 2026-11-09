@@ -1,38 +1,24 @@
-/*
-Minetest
-Copyright (C) 2013 celeron55, Perttu Ahola <celeron55@gmail.com>
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU Lesser General Public License as published by
-the Free Software Foundation; either version 2.1 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Lesser General Public License for more details.
-
-You should have received a copy of the GNU Lesser General Public License along
-with this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
-*/
+// Luanti
+// SPDX-License-Identifier: LGPL-2.1-or-later
+// Copyright (C) 2013 celeron55, Perttu Ahola <celeron55@gmail.com>
 
 
 #include "porting.h"
 #include "debug.h"
 #include "exceptions.h"
-#include "threads.h"
-#include <stdio.h>
-#include <stdlib.h>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <map>
 #include <sstream>
-#include "threading/mutex.h"
+#include <thread>
 #include "threading/mutex_auto_lock.h"
 #include "config.h"
 
 #ifdef _MSC_VER
 	#include <dbghelp.h>
+	#include <windows.h>
+	#include <eh.h>
 	#include "version.h"
 	#include "filesys.h"
 #endif
@@ -53,11 +39,9 @@ void sanity_check_fn(const char *assertion, const char *file,
 #endif
 
 	errorstream << std::endl << "In thread " << std::hex
-		<< thr_get_current_thread_id() << ":" << std::endl;
+		<< std::this_thread::get_id() << ":\n" << std::dec;
 	errorstream << file << ":" << line << ": " << function
 		<< ": An engine assumption '" << assertion << "' failed." << std::endl;
-
-	debug_stacks_print_to(errorstream);
 
 	abort();
 }
@@ -70,166 +54,18 @@ void fatal_error_fn(const char *msg, const char *file,
 #endif
 
 	errorstream << std::endl << "In thread " << std::hex
-		<< thr_get_current_thread_id() << ":" << std::endl;
+		<< std::this_thread::get_id() << ":\n" << std::dec;
 	errorstream << file << ":" << line << ": " << function
-		<< ": A fatal error occured: " << msg << std::endl;
-
-	debug_stacks_print_to(errorstream);
+		<< ": A fatal error occurred: " << msg << std::endl;
 
 	abort();
 }
 
-/*
-	DebugStack
-*/
-
-struct DebugStack
+std::string debug_describe_exc(const std::exception &e)
 {
-	DebugStack(threadid_t id);
-	void print(FILE *file, bool everything);
-	void print(std::ostream &os, bool everything);
-
-	threadid_t threadid;
-	char stack[DEBUG_STACK_SIZE][DEBUG_STACK_TEXT_SIZE];
-	int stack_i; // Points to the lowest empty position
-	int stack_max_i; // Highest i that was seen
-};
-
-DebugStack::DebugStack(threadid_t id)
-{
-	threadid = id;
-	stack_i = 0;
-	stack_max_i = 0;
-	memset(stack, 0, DEBUG_STACK_SIZE*DEBUG_STACK_TEXT_SIZE);
-}
-
-void DebugStack::print(FILE *file, bool everything)
-{
-	std::ostringstream os;
-	os << threadid;
-	fprintf(file, "DEBUG STACK FOR THREAD %s:\n",
-		os.str().c_str());
-
-	for(int i=0; i<stack_max_i; i++)
-	{
-		if(i == stack_i && everything == false)
-			break;
-
-		if(i < stack_i)
-			fprintf(file, "#%d  %s\n", i, stack[i]);
-		else
-			fprintf(file, "(Leftover data: #%d  %s)\n", i, stack[i]);
-	}
-
-	if(stack_i == DEBUG_STACK_SIZE)
-		fprintf(file, "Probably overflown.\n");
-}
-
-void DebugStack::print(std::ostream &os, bool everything)
-{
-	os<<"DEBUG STACK FOR THREAD "<<threadid<<": "<<std::endl;
-
-	for(int i=0; i<stack_max_i; i++)
-	{
-		if(i == stack_i && everything == false)
-			break;
-
-		if(i < stack_i)
-			os<<"#"<<i<<"  "<<stack[i]<<std::endl;
-		else
-			os<<"(Leftover data: #"<<i<<"  "<<stack[i]<<")"<<std::endl;
-	}
-
-	if(stack_i == DEBUG_STACK_SIZE)
-		os<<"Probably overflown."<<std::endl;
-}
-
-// Note:  Using pthread_t (that is, threadid_t on POSIX platforms) as the key to
-// a std::map is naughty.  Formally, a pthread_t may only be compared using
-// pthread_equal() - pthread_t lacks the well-ordered property needed for
-// comparisons in binary searches.  This should be fixed at some point by
-// defining a custom comparator with an arbitrary but stable ordering of
-// pthread_t, but it isn't too important since none of our supported platforms
-// implement pthread_t as a non-ordinal type.
-std::map<threadid_t, DebugStack*> g_debug_stacks;
-Mutex g_debug_stacks_mutex;
-
-void debug_stacks_init()
-{
-}
-
-void debug_stacks_print_to(std::ostream &os)
-{
-	MutexAutoLock lock(g_debug_stacks_mutex);
-
-	os<<"Debug stacks:"<<std::endl;
-
-	for(std::map<threadid_t, DebugStack*>::iterator
-			i = g_debug_stacks.begin();
-			i != g_debug_stacks.end(); ++i)
-	{
-		i->second->print(os, false);
-	}
-}
-
-void debug_stacks_print()
-{
-	debug_stacks_print_to(errorstream);
-}
-
-DebugStacker::DebugStacker(const char *text)
-{
-	threadid_t threadid = thr_get_current_thread_id();
-
-	MutexAutoLock lock(g_debug_stacks_mutex);
-
-	std::map<threadid_t, DebugStack*>::iterator n;
-	n = g_debug_stacks.find(threadid);
-	if(n != g_debug_stacks.end())
-	{
-		m_stack = n->second;
-	}
-	else
-	{
-		/*DEBUGPRINT("Creating new debug stack for thread %x\n",
-				(unsigned int)threadid);*/
-		m_stack = new DebugStack(threadid);
-		g_debug_stacks[threadid] = m_stack;
-	}
-
-	if(m_stack->stack_i >= DEBUG_STACK_SIZE)
-	{
-		m_overflowed = true;
-	}
-	else
-	{
-		m_overflowed = false;
-
-		snprintf(m_stack->stack[m_stack->stack_i],
-				DEBUG_STACK_TEXT_SIZE, "%s", text);
-		m_stack->stack_i++;
-		if(m_stack->stack_i > m_stack->stack_max_i)
-			m_stack->stack_max_i = m_stack->stack_i;
-	}
-}
-
-DebugStacker::~DebugStacker()
-{
-	MutexAutoLock lock(g_debug_stacks_mutex);
-
-	if(m_overflowed == true)
-		return;
-
-	m_stack->stack_i--;
-
-	if(m_stack->stack_i == 0)
-	{
-		threadid_t threadid = m_stack->threadid;
-		/*DEBUGPRINT("Deleting debug stack for thread %x\n",
-				(unsigned int)threadid);*/
-		delete m_stack;
-		g_debug_stacks.erase(threadid);
-	}
+	if (dynamic_cast<const std::bad_alloc*>(&e))
+		return "C++ out of memory";
+	return std::string("\"").append(e.what()).append("\"");
 }
 
 #ifdef _MSC_VER

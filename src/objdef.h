@@ -1,30 +1,16 @@
-/*
-Minetest
-Copyright (C) 2010-2015 kwolekr, Ryan Kwolek <kwolekr@minetest.net>
+// Luanti
+// SPDX-License-Identifier: LGPL-2.1-or-later
+// Copyright (C) 2010-2015 kwolekr, Ryan Kwolek <kwolekr@minetest.net>
 
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU Lesser General Public License as published by
-the Free Software Foundation; either version 2.1 of the License, or
-(at your option) any later version.
+#pragma once
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Lesser General Public License for more details.
-
-You should have received a copy of the GNU Lesser General Public License along
-with this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
-*/
-
-#ifndef OBJDEF_HEADER
-#define OBJDEF_HEADER
-
-#include "util/basic_macros.h"
-#include "porting.h"
+#include "util/basic_macros.h" // DISABLE_CLASS_COPY
+#include "irrlichttypes.h"
+#include <string>
+#include <vector>
 
 class IGameDef;
-class INodeDefManager;
+class NodeDefManager;
 
 #define OBJDEF_INVALID_INDEX ((u32)(-1))
 #define OBJDEF_INVALID_HANDLE 0
@@ -44,21 +30,37 @@ enum ObjDefType {
 
 class ObjDef {
 public:
-	virtual ~ObjDef() {}
+	virtual ~ObjDef() = default;
+
+	// Only implemented by child classes (leafs in class hierarchy)
+	// Should create new object of its own type, call cloneTo() of parent class
+	// and copy its own instance variables over
+	virtual ObjDef *clone() const = 0;
 
 	u32 index;
 	u32 uid;
 	ObjDefHandle handle;
 	std::string name;
+
+protected:
+	// Only implemented by classes that have children themselves
+	// by copying the definition and changing that argument type (!!!)
+	// Should defer to parent class cloneTo() if applicable and then copy
+	// over its own properties
+	void cloneTo(ObjDef *def) const;
 };
 
 // WARNING: Ownership of ObjDefs is transferred to the ObjDefManager it is
 // added/set to.  Note that ObjDefs managed by ObjDefManager are NOT refcounted,
 // so the same ObjDef instance must not be referenced multiple
+// TODO: const correctness for getter methods
 class ObjDefManager {
 public:
 	ObjDefManager(IGameDef *gamedef, ObjDefType type);
 	virtual ~ObjDefManager();
+	DISABLE_CLASS_COPY(ObjDefManager);
+
+	// T *clone() const; // implemented in child class with correct type
 
 	virtual const char *getObjectTitle() const { return "ObjDef"; }
 
@@ -80,7 +82,7 @@ public:
 
 	size_t getNumObjects() const { return m_objects.size(); }
 	ObjDefType getType() const { return m_objtype; }
-	INodeDefManager *getNodeDef() const { return m_ndef; }
+	const NodeDefManager *getNodeDef() const { return m_ndef; }
 
 	u32 validateHandle(ObjDefHandle handle) const;
 	static ObjDefHandle createHandle(u32 index, ObjDefType type, u32 uid);
@@ -88,12 +90,11 @@ public:
 		ObjDefType *type, u32 *uid);
 
 protected:
-	INodeDefManager *m_ndef;
+	ObjDefManager() {};
+	// Helper for child classes to implement clone()
+	void cloneTo(ObjDefManager *mgr) const;
+
+	const NodeDefManager *m_ndef;
 	std::vector<ObjDef *> m_objects;
 	ObjDefType m_objtype;
-
-private:
-	DISABLE_CLASS_COPY(ObjDefManager);
 };
-
-#endif

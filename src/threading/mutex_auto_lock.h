@@ -23,40 +23,11 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 */
 
-#ifndef THREADING_MUTEX_AUTO_LOCK_H
-#define THREADING_MUTEX_AUTO_LOCK_H
+#pragma once
 
-#include "threads.h"
+#include <mutex>
 
-#if USE_CPP11_MUTEX
-	#include <mutex>
-	using MutexAutoLock = std::unique_lock<std::mutex>;
-	using RecursiveMutexAutoLock = std::unique_lock<std::recursive_mutex>;
-#else
-
-#include "threading/mutex.h"
-
-
-class MutexAutoLock
-{
-public:
-	MutexAutoLock(Mutex &m) : mutex(m) { mutex.lock(); }
-	~MutexAutoLock() { mutex.unlock(); }
-
-private:
-	Mutex &mutex;
-};
-
-class RecursiveMutexAutoLock
-{
-public:
-	RecursiveMutexAutoLock(RecursiveMutex &m) : mutex(m) { mutex.lock(); }
-	~RecursiveMutexAutoLock() { mutex.unlock(); }
-
-private:
-	RecursiveMutex &mutex;
-};
-#endif
-
-#endif
-
+/// @deprecated use std::lock_guard directly
+using MutexAutoLock = std::lock_guard<std::mutex>;
+/// @deprecated use std::lock_guard directly
+using RecursiveMutexAutoLock = std::lock_guard<std::recursive_mutex>;

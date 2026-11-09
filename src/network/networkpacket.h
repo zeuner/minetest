@@ -1,135 +1,152 @@
-/*
-Minetest
-Copyright (C) 2015 nerzhul, Loic Blot <loic.blot@unix-experience.fr>
+// Luanti
+// SPDX-License-Identifier: LGPL-2.1-or-later
+// Copyright (C) 2015 nerzhul, Loic Blot <loic.blot@unix-experience.fr>
 
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU Lesser General Public License as published by
-the Free Software Foundation; either version 2.1 of the License, or
-(at your option) any later version.
+#pragma once
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Lesser General Public License for more details.
-
-You should have received a copy of the GNU Lesser General Public License along
-with this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
-*/
-
-#ifndef NETWORKPACKET_HEADER
-#define NETWORKPACKET_HEADER
-
-#include "util/pointer.h"
-#include "util/numeric.h"
+#include "util/pointer.h" // Buffer<T>
+#include "irrlichttypes_bloated.h"
 #include "networkprotocol.h"
+#include <SColor.h>
+#include <string>
+#include <string_view>
+#include <vector>
 
 class NetworkPacket
 {
-
 public:
-		NetworkPacket(u16 command, u32 datasize, u16 peer_id);
-		NetworkPacket(u16 command, u32 datasize);
-		NetworkPacket(): m_datasize(0), m_read_offset(0), m_command(0),
-				m_peer_id(0) {}
-		~NetworkPacket();
+	NetworkPacket(u16 command, u32 preallocate, session_t peer_id) :
+		m_command(command), m_peer_id(peer_id)
+	{
+		m_data.reserve(preallocate);
+	}
+	NetworkPacket(u16 command, u32 preallocate) :
+		m_command(command)
+	{
+		m_data.reserve(preallocate);
+	}
+	NetworkPacket() = default;
 
-		void putRawPacket(u8 *data, u32 datasize, u16 peer_id);
+	~NetworkPacket() = default;
 
-		// Getters
-		u32 getSize() { return m_datasize; }
-		u16 getPeerId() { return m_peer_id; }
-		u16 getCommand() { return m_command; }
-		const u32 getRemainingBytes() const { return m_datasize - m_read_offset; }
-		const char* getRemainingString() { return getString(m_read_offset); }
+	void putRawPacket(const u8 *data, u32 datasize, session_t peer_id);
+	void clear();
 
-		// Returns a c-string without copying.
-		// A better name for this would be getRawString()
-		const char* getString(u32 from_offset);
-		// major difference to putCString(): doesn't write len into the buffer
-		void putRawString(const char* src, u32 len);
-		void putRawString(const std::string &src)
-			{ putRawString(src.c_str(), src.size()); }
+	// Getters
+	u32 getSize() const { return m_datasize; }
+	session_t getPeerId() const { return m_peer_id; }
+	u16 getCommand() const { return m_command; }
 
-		NetworkPacket& operator>>(std::string& dst);
-		NetworkPacket& operator<<(std::string src);
+	/// Read OR write offset (context-depending)
+	inline u32 getOffset() const { return m_read_offset; }
 
-		void putLongString(std::string src);
+	u32 getRemainingBytes() const { return m_datasize - m_read_offset; }
+	inline bool hasRemainingBytes() const { return getRemainingBytes() != 0; }
 
-		NetworkPacket& operator>>(std::wstring& dst);
-		NetworkPacket& operator<<(std::wstring src);
+	//! Does not advance the data read offset!
+	std::string_view getRemainingNoCopy() const;
 
-		std::string readLongString();
+	// Perform length check and skip ahead by `count` bytes.
+	inline void skip(u32 count) {
+		m_read_offset = checkReadOffset(m_read_offset, count);
+	}
+	//! Sets the read OR write offset (context-dependent)
+	inline void seek(u32 position) {
+		m_read_offset = checkReadOffset(position, 0);
+	}
 
-		char getChar(u32 offset);
-		NetworkPacket& operator>>(char& dst);
-		NetworkPacket& operator<<(char src);
+	// Appends bytes from string buffer to packet
+	void putRawString(const char *src, u32 len);
+	void putRawString(std::string_view src)
+	{
+		putRawString(src.data(), src.size());
+	}
 
-		NetworkPacket& operator>>(bool& dst);
-		NetworkPacket& operator<<(bool src);
+	// Reads bytes from packet into string buffer
+	void readRawString(char *dst, u32 len);
+	std::string readRawString(u32 len)
+	{
+		std::string s;
+		s.resize(len);
+		readRawString(&s[0], len);
+		return s;
+	}
 
-		u8 getU8(u32 offset);
+	NetworkPacket &operator>>(std::string &dst);
+	NetworkPacket &operator<<(std::string_view src);
 
-		NetworkPacket& operator>>(u8& dst);
-		NetworkPacket& operator<<(u8 src);
+	void putLongString(std::string_view src);
 
-		u8* getU8Ptr(u32 offset);
+	NetworkPacket &operator>>(std::wstring &dst);
+	NetworkPacket &operator<<(std::wstring_view src);
 
-		u16 getU16(u32 from_offset);
-		NetworkPacket& operator>>(u16& dst);
-		NetworkPacket& operator<<(u16 src);
+	std::string readLongString();
 
-		NetworkPacket& operator>>(u32& dst);
-		NetworkPacket& operator<<(u32 src);
+	NetworkPacket &operator>>(char &dst);
+	NetworkPacket &operator<<(char src);
 
-		NetworkPacket& operator>>(u64& dst);
-		NetworkPacket& operator<<(u64 src);
+	NetworkPacket &operator>>(bool &dst);
+	NetworkPacket &operator<<(bool src);
 
-		NetworkPacket& operator>>(float& dst);
-		NetworkPacket& operator<<(float src);
+	NetworkPacket &operator>>(u8 &dst);
+	NetworkPacket &operator<<(u8 src);
 
-		NetworkPacket& operator>>(v2f& dst);
-		NetworkPacket& operator<<(v2f src);
+	NetworkPacket &operator>>(u16 &dst);
+	NetworkPacket &operator<<(u16 src);
 
-		NetworkPacket& operator>>(v3f& dst);
-		NetworkPacket& operator<<(v3f src);
+	NetworkPacket &operator>>(u32 &dst);
+	NetworkPacket &operator<<(u32 src);
 
-		NetworkPacket& operator>>(s16& dst);
-		NetworkPacket& operator<<(s16 src);
+	NetworkPacket &operator>>(u64 &dst);
+	NetworkPacket &operator<<(u64 src);
 
-		NetworkPacket& operator>>(s32& dst);
-		NetworkPacket& operator<<(s32 src);
+	NetworkPacket &operator>>(float &dst);
+	NetworkPacket &operator<<(float src);
 
-		NetworkPacket& operator>>(v2s32& dst);
-		NetworkPacket& operator<<(v2s32 src);
+	NetworkPacket &operator>>(v2f &dst);
+	NetworkPacket &operator<<(v2f src);
 
-		NetworkPacket& operator>>(v3s16& dst);
-		NetworkPacket& operator<<(v3s16 src);
+	NetworkPacket &operator>>(v3f &dst);
+	NetworkPacket &operator<<(v3f src);
 
-		NetworkPacket& operator>>(v3s32& dst);
-		NetworkPacket& operator<<(v3s32 src);
+	NetworkPacket &operator>>(s16 &dst);
+	NetworkPacket &operator<<(s16 src);
 
-		NetworkPacket& operator>>(video::SColor& dst);
-		NetworkPacket& operator<<(video::SColor src);
+	NetworkPacket &operator>>(s32 &dst);
+	NetworkPacket &operator<<(s32 src);
 
-		// Temp, we remove SharedBuffer when migration finished
-		Buffer<u8> oldForgePacket();
+	NetworkPacket &operator>>(v2s32 &dst);
+	NetworkPacket &operator<<(v2s32 src);
+
+	NetworkPacket &operator>>(v3s16 &dst);
+	NetworkPacket &operator<<(v3s16 src);
+
+	NetworkPacket &operator>>(v3s32 &dst);
+	NetworkPacket &operator<<(v3s32 src);
+
+	NetworkPacket &operator>>(video::SColor &dst);
+	NetworkPacket &operator<<(video::SColor src);
+
+	// Temp, we remove SharedBuffer when migration finished
+	// ^ this comment has been here for 7 years
+	Buffer<u8> oldForgePacket();
+
 private:
-		void checkReadOffset(u32 from_offset, u32 field_size);
+	/// Returns `from_offset + field_size` on success
+	u32 checkReadOffset(u32 from_offset, u32 field_size) const;
 
-		inline void checkDataSize(u32 field_size)
-		{
-			if (m_read_offset + field_size > m_datasize) {
-				m_datasize = m_read_offset + field_size;
-				m_data.resize(m_datasize);
-			}
+	// resize data buffer for writing
+	inline void checkDataSize(u32 field_size)
+	{
+		if (m_read_offset + field_size > m_datasize) {
+			m_datasize = m_read_offset + field_size;
+			m_data.resize(m_datasize);
 		}
+	}
 
-		std::vector<u8> m_data;
-		u32 m_datasize;
-		u32 m_read_offset;
-		u16 m_command;
-		u16 m_peer_id;
+	std::vector<u8> m_data;
+	u32 m_datasize = 0;
+	u32 m_read_offset = 0; // read and write offset
+	u16 m_command = 0;
+	session_t m_peer_id = 0;
 };
-
-#endif

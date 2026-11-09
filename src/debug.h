@@ -1,45 +1,36 @@
-/*
-Minetest
-Copyright (C) 2013 celeron55, Perttu Ahola <celeron55@gmail.com>
+// Luanti
+// SPDX-License-Identifier: LGPL-2.1-or-later
+// Copyright (C) 2013 celeron55, Perttu Ahola <celeron55@gmail.com>
 
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU Lesser General Public License as published by
-the Free Software Foundation; either version 2.1 of the License, or
-(at your option) any later version.
+#pragma once
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Lesser General Public License for more details.
-
-You should have received a copy of the GNU Lesser General Public License along
-with this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
-*/
-
-#ifndef DEBUG_HEADER
-#define DEBUG_HEADER
-
-#include <iostream>
 #include <exception>
-#include <assert.h>
-#include "gettime.h"
-#include "log.h"
+#include <cassert>
+#include "log.h" // unused. for convenience.
 
-#if (defined(WIN32) || defined(_WIN32_WCE))
-	#define WIN32_LEAN_AND_MEAN
-	#ifndef _WIN32_WINNT
-		#define _WIN32_WINNT 0x0501
-	#endif
-	#include <windows.h>
-	#ifdef _MSC_VER
-		#include <eh.h>
-	#endif
-	#define NORETURN __declspec(noreturn)
+#ifdef _MSC_VER
 	#define FUNCTION_NAME __FUNCTION__
 #else
-	#define NORETURN __attribute__ ((__noreturn__))
 	#define FUNCTION_NAME __PRETTY_FUNCTION__
+#endif
+
+// Abort branches should always be marked unlikely, non-inline and cold,
+// so that the compiler can reduce their performance impact.
+#define EXPR_BOOL(expr)         ((expr) ? 1 : 0)
+#if defined(__GNUC__) || defined(__clang__)
+	#define COLD_FUNC       __attribute__((cold, noinline))
+	#define LIKELY(expr)    (__builtin_expect(EXPR_BOOL(expr), 1))
+	#define UNLIKELY(expr)  (__builtin_expect(EXPR_BOOL(expr), 0))
+#elif defined(_MSC_VER)
+	// MSVC has no exact cold equivalent. It supports [[likely]]
+	// and [[unlikely]], but we don't use C++20 yet.
+	#define COLD_FUNC       __declspec(noinline)
+	#define LIKELY(expr)    EXPR_BOOL(expr)
+	#define UNLIKELY(expr)  EXPR_BOOL(expr)
+#else
+	#define COLD_FUNC
+	#define LIKELY(expr)    EXPR_BOOL(expr)
+	#define UNLIKELY(expr)  EXPR_BOOL(expr)
 #endif
 
 // Whether to catch all std::exceptions.
@@ -53,7 +44,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 /* Abort program execution immediately
  */
-NORETURN extern void fatal_error_fn(
+[[noreturn]] extern COLD_FUNC void fatal_error_fn(
 		const char *msg, const char *file,
 		unsigned int line, const char *function);
 
@@ -61,7 +52,7 @@ NORETURN extern void fatal_error_fn(
 	fatal_error_fn((msg), __FILE__, __LINE__, FUNCTION_NAME)
 
 #define FATAL_ERROR_IF(expr, msg) \
-	((expr) \
+	(UNLIKELY(expr) \
 	? fatal_error_fn((msg), __FILE__, __LINE__, FUNCTION_NAME) \
 	: (void)(0))
 
@@ -71,50 +62,20 @@ NORETURN extern void fatal_error_fn(
 	defined)
 */
 
-NORETURN extern void sanity_check_fn(
+[[noreturn]] extern COLD_FUNC void sanity_check_fn(
 		const char *assertion, const char *file,
 		unsigned int line, const char *function);
 
 #define SANITY_CHECK(expr) \
-	((expr) \
+	(LIKELY(expr) \
 	? (void)(0) \
 	: sanity_check_fn(#expr, __FILE__, __LINE__, FUNCTION_NAME))
 
 #define sanity_check(expr) SANITY_CHECK(expr)
 
+std::string debug_describe_exc(const std::exception &e);
 
 void debug_set_exception_handler();
-
-/*
-	DebugStack
-*/
-
-#define DEBUG_STACK_SIZE 50
-#define DEBUG_STACK_TEXT_SIZE 300
-
-extern void debug_stacks_init();
-extern void debug_stacks_print_to(std::ostream &os);
-extern void debug_stacks_print();
-
-struct DebugStack;
-class DebugStacker
-{
-public:
-	DebugStacker(const char *text);
-	~DebugStacker();
-
-private:
-	DebugStack *m_stack;
-	bool m_overflowed;
-};
-
-#define DSTACK(msg) \
-	DebugStacker __debug_stacker(msg);
-
-#define DSTACKF(...) \
-	char __buf[DEBUG_STACK_TEXT_SIZE];                   \
-	snprintf(__buf, DEBUG_STACK_TEXT_SIZE, __VA_ARGS__); \
-	DebugStacker __debug_stacker(__buf);
 
 /*
 	These should be put into every thread
@@ -124,16 +85,13 @@ private:
 	#define BEGIN_DEBUG_EXCEPTION_HANDLER try {
 	#define END_DEBUG_EXCEPTION_HANDLER                        \
 		} catch (std::exception &e) {                          \
+			std::string e_descr = debug_describe_exc(e);       \
 			errorstream << "An unhandled exception occurred: " \
-				<< e.what() << std::endl;                      \
-			FATAL_ERROR(e.what());                             \
+				<< e_descr << std::endl;                       \
+			FATAL_ERROR(e_descr.c_str());                      \
 		}
 #else
 	// Dummy ones
 	#define BEGIN_DEBUG_EXCEPTION_HANDLER
 	#define END_DEBUG_EXCEPTION_HANDLER
 #endif
-
-#endif // DEBUG_HEADER
-
-

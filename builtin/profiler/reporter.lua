@@ -1,24 +1,15 @@
---Minetest
---Copyright (C) 2016 T4im
---
---This program is free software; you can redistribute it and/or modify
---it under the terms of the GNU Lesser General Public License as published by
---the Free Software Foundation; either version 2.1 of the License, or
---(at your option) any later version.
---
---This program is distributed in the hope that it will be useful,
---but WITHOUT ANY WARRANTY; without even the implied warranty of
---MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
---GNU Lesser General Public License for more details.
---
---You should have received a copy of the GNU Lesser General Public License along
---with this program; if not, write to the Free Software Foundation, Inc.,
---51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+-- Luanti
+-- Copyright (C) 2016 T4im
+-- SPDX-License-Identifier: LGPL-2.1-or-later
+
+local S = core.get_translator("__builtin")
+-- Note: In this file, only messages are translated
+-- but not the table itself, to keep it simple.
 
 local DIR_DELIM, LINE_DELIM = DIR_DELIM, "\n"
 local table, unpack, string, pairs, io, os = table, unpack, string, pairs, io, os
 local rep, sprintf, tonumber = string.rep, string.format, tonumber
-local core, setting_get = core, core.setting_get
+local core, settings = core, core.settings
 local reporter = {}
 
 ---
@@ -73,7 +64,7 @@ local Formatter = {
 	end
 }
 
-local widths = { 55, 9, 9, 9, 5, 5, 5 }
+local widths = { 80, 9, 9, 9, 5, 5, 5 }
 local txt_row_format = sprintf(" %%-%ds | %%%ds | %%%ds | %%%ds | %%%ds | %%%ds | %%%ds", unpack(widths))
 
 local HR = {}
@@ -104,11 +95,11 @@ local TxtFormatter = Formatter:new {
 	end,
 	format = function(self, filter)
 		local profile = self.profile
-		self:print("Values below show absolute/relative times spend per server step by the instrumented function.")
-		self:print("A total of %d samples were taken", profile.stats_total.samples)
+		self:print(S("Values below show absolute/relative times spend per server step by the instrumented function."))
+		self:print(S("A total of @1 sample(s) were taken.", profile.stats_total.samples))
 
 		if filter then
-			self:print("The output is limited to '%s'", filter)
+			self:print(S("The output is limited to '@1'.", filter))
 		end
 
 		self:print()
@@ -177,7 +168,7 @@ local CsvFormatter = Formatter:new {
 	end
 }
 
-local function format_statistics(profile, format, filter)
+local function format_statistics(profile, format, filter, enable_translation)
 	local formatter
 	if format == "csv" then
 		formatter = CsvFormatter:new {
@@ -189,16 +180,20 @@ local function format_statistics(profile, format, filter)
 		}
 	end
 	formatter:format(filter)
-	return formatter:flush()
+	local out = formatter:flush()
+	if not enable_translation then
+		out = core.strip_escapes(out)
+	end
+	return out
 end
 
 ---
 -- Format the profile ready for display and
 -- @return string to be printed to the console
 --
-function reporter.print(profile, filter)
+function reporter.print(profile, filter, enable_translation)
 	if filter == "" then filter = nil end
-	return format_statistics(profile, "txt", filter)
+	return format_statistics(profile, "txt", filter, enable_translation)
 end
 
 ---
@@ -224,12 +219,12 @@ local function serialize_profile(profile, format, filter)
 		end
 	end
 	-- Fall back to textual formats.
-	return format_statistics(profile, format, filter)
+	return format_statistics(profile, format, filter, false)
 end
 
 local worldpath = core.get_worldpath()
 local function get_save_path(format, filter)
-	local report_path = setting_get("profiler.report_path") or ""
+	local report_path = settings:get("profiler.report_path") or ""
 	if report_path ~= "" then
 		core.mkdir(sprintf("%s%s%s", worldpath, DIR_DELIM, report_path))
 	end
@@ -249,7 +244,7 @@ end
 --
 function reporter.save(profile, format, filter)
 	if not format or format == "" then
-		format = setting_get("profiler.default_report_format") or "txt"
+		format = settings:get("profiler.default_report_format") or "txt"
 	end
 	if filter == "" then
 		filter = nil
@@ -259,19 +254,18 @@ function reporter.save(profile, format, filter)
 
 	local output, io_err = io.open(path, "w")
 	if not output then
-		return false, "Saving of profile failed with: " .. io_err
+		return false, S("Saving of profile failed: @1", io_err)
 	end
 	local content, err = serialize_profile(profile, format, filter)
 	if not content then
 		output:close()
-		return false, "Saving of profile failed with: " .. err
+		return false, S("Saving of profile failed: @1", err)
 	end
 	output:write(content)
 	output:close()
 
-	local logmessage = "Profile saved to " .. path
-	core.log("action", logmessage)
-	return true, logmessage
+	core.log("action", "Profile saved to " .. path)
+	return true, S("Profile saved to @1", path)
 end
 
 return reporter

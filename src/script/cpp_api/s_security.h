@@ -1,24 +1,8 @@
-/*
-Minetest
-Copyright (C) 2013 celeron55, Perttu Ahola <celeron55@gmail.com>
+// Luanti
+// SPDX-License-Identifier: LGPL-2.1-or-later
+// Copyright (C) 2013 celeron55, Perttu Ahola <celeron55@gmail.com>
 
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU Lesser General Public License as published by
-the Free Software Foundation; either version 2.1 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Lesser General Public License for more details.
-
-You should have received a copy of the GNU Lesser General Public License along
-with this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
-*/
-
-#ifndef S_SECURITY_H
-#define S_SECURITY_H
+#pragma once
 
 #include "cpp_api/s_base.h"
 
@@ -26,12 +10,14 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define CHECK_SECURE_PATH_INTERNAL(L, path, write_required, ptr) \
 	if (!ScriptApiSecurity::checkPath(L, path, write_required, ptr)) { \
 		throw LuaError(std::string("Mod security: Blocked attempted ") + \
-				(write_required ? "write to " : "read from ") + path); \
+				((write_required) ? "write to " : "read from ") + path); \
 	}
+
 #define CHECK_SECURE_PATH(L, path, write_required) \
 	if (ScriptApiSecurity::isSecure(L)) { \
-		CHECK_SECURE_PATH_INTERNAL(L, path, write_required, NULL); \
+		CHECK_SECURE_PATH_INTERNAL(L, path, write_required, nullptr); \
 	}
+
 #define CHECK_SECURE_PATH_POSSIBLE_WRITE(L, path, ptr) \
 	if (ScriptApiSecurity::isSecure(L)) { \
 		CHECK_SECURE_PATH_INTERNAL(L, path, false, ptr); \
@@ -41,19 +27,84 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 class ScriptApiSecurity : virtual public ScriptApiBase
 {
 public:
-	int backupGlobals(lua_State *L);
-	// Sets up security on the ScriptApi's Lua state
+	// Sets up security/sandboxing on the ScriptApi's Lua state
 	void initializeSecurity();
+#if CHECK_CLIENT_BUILD()
 	void initializeSecurityClient();
+	void initializeSecuritySSCSM();
+#else
+	void initializeSecurityClient() { assert(0); }
+	void initializeSecuritySSCSM() { assert(0); }
+#endif
+
 	// Checks if the Lua state has been secured
 	static bool isSecure(lua_State *L);
-	// Loads a file as Lua code safely (doesn't allow bytecode).
-	static bool safeLoadFile(lua_State *L, const char *path);
-	// Checks if mods are allowed to read (and optionally write) to the path
+	// Leaves the untampered globals (table) on top of the stack
+	static void getGlobalsBackup(lua_State *L);
+
+	/// Loads a string as Lua code safely (doesn't allow bytecode).
+	static bool safeLoadString(lua_State *L, std::string_view code, const char *chunk_name);
+	/// Same as above, but removes shebangs.
+	static bool safeLoadFileContent(lua_State *L, std::string_view code, const char *chunk_name);
+	/// Loads a file as Lua code safely (doesn't allow bytecode).
+	/// @warning path is not validated in any way
+	/// Prints warnings for modified builtin files.
+	static bool safeLoadFile(lua_State *L, const char *path, const char *display_name = nullptr);
+
+	/**
+	 * Returns the currently running mod, only during init time.
+	 * This checks the Lua stack to only permit direct calls in the file
+	 * scope. That way it is assured that it's really the mod it claims to be.
+	 * @return mod name or "" on error
+	 */
+	static std::string getCurrentModName(lua_State *L);
+	/// Check if mod is whitelisted in the given setting.
+	/// This additionally does main scope checks (see above method).
+	/// @note check is performed even in non-secured Lua state
+	static bool checkWhitelisted(lua_State *L, const std::string &setting);
+
+	/// Checks if mods are allowed to read (and optionally write) to the path
+	/// @note invalid to call in non-secured Lua state
 	static bool checkPath(lua_State *L, const char *path, bool write_required,
-			bool *write_allowed=NULL);
+			bool *write_allowed = nullptr);
+
+protected:
+	// To be implemented by descendants:
+
+	/**
+	 * Specify if the mod names during init time(!) can be trusted.
+	 * It needs to be assured that no tampering happens before any call to `loadMod()`.
+	 * @note disabling this implies that mod whitelisting never works
+	 * @return boolean value
+	 */
+	virtual bool modNamesAreTrusted() { return false; }
+
+	/**
+	 * Should check if the given path may be accessed.
+	 * If `write_required` is true test for write access, if false test for read access.
+	 * @param abs_path absolute file/directory path, may not exist
+	 * @param write_required was write access requested?
+	 * @param write_allowed output parameter (nullable): set to true if writing is allowed
+	 * @return true if access is allowed
+	 */
+	virtual bool checkPathInternal(const std::string &abs_path, bool write_required,
+		bool *write_allowed) = 0;
+
+	// Ready-made implementation of `checkPathInternal` suitable for server-related uses
+	static bool checkPathWithGamedef(lua_State *L, const std::string &abs_path,
+		bool write_required, bool *write_allowed);
 
 private:
+	static int getThread(lua_State *L);
+	// sets the environment to the table that's on top of the stack
+	static void setLuaEnv(lua_State *L, int thread);
+	// creates an empty Lua environment
+	static void createEmptyEnv(lua_State *L);
+	// replace "default files" (io.input/io.output) with /dev/null
+	static void replaceDefaultFiles(lua_State *L);
+
+	bool m_secure = false;
+
 	// Syntax: "sl_" <Library name or 'g' (global)> '_' <Function name>
 	// (sl stands for Secure Lua)
 
@@ -62,6 +113,7 @@ private:
 	static int sl_g_loadfile(lua_State *L);
 	static int sl_g_loadstring(lua_State *L);
 	static int sl_g_require(lua_State *L);
+	static int sl_g_collectgarbage(lua_State *L);
 
 	static int sl_io_open(lua_State *L);
 	static int sl_io_input(lua_State *L);
@@ -70,7 +122,11 @@ private:
 
 	static int sl_os_rename(lua_State *L);
 	static int sl_os_remove(lua_State *L);
-};
+	static int sl_os_setlocale(lua_State *L);
 
-#endif
+	// reduced precision (for SSCSM)
+	static int sl_os_clock(lua_State *L);
+
+	static int sl_debug_getinfo(lua_State *L);
+};
 

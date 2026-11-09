@@ -1,29 +1,18 @@
-/*
-Minetest
-Copyright (C) 2010-2013 celeron55, Perttu Ahola <celeron55@gmail.com>
+// Luanti
+// SPDX-License-Identifier: LGPL-2.1-or-later
+// Copyright (C) 2010-2013 celeron55, Perttu Ahola <celeron55@gmail.com>
 
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU Lesser General Public License as published by
-the Free Software Foundation; either version 2.1 of the License, or
-(at your option) any later version.
+#pragma once
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Lesser General Public License for more details.
-
-You should have received a copy of the GNU Lesser General Public License along
-with this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
-*/
-
-#ifndef INVENTORYMANAGER_HEADER
-#define INVENTORYMANAGER_HEADER
-
-#include "inventory.h"
+#include "irr_v3d.h"
 #include <iostream>
 #include <string>
+#include <vector>
+
 class ServerActiveObject;
+struct ItemStack;
+class Inventory;
+class IGameDef;
 
 struct InventoryLocation
 {
@@ -32,7 +21,7 @@ struct InventoryLocation
 		CURRENT_PLAYER,
 		PLAYER,
 		NODEMETA,
-        DETACHED,
+		DETACHED,
 	} type;
 
 	std::string name; // PLAYER, DETACHED
@@ -55,7 +44,7 @@ struct InventoryLocation
 		type = PLAYER;
 		name = name_;
 	}
-	void setNodeMeta(v3s16 p_)
+	void setNodeMeta(const v3s16 &p_)
 	{
 		type = NODEMETA;
 		p = p_;
@@ -98,7 +87,7 @@ struct InventoryLocation
 	std::string dump() const;
 	void serialize(std::ostream &os) const;
 	void deSerialize(std::istream &is);
-	void deSerialize(std::string s);
+	void deSerialize(const std::string &s);
 };
 
 struct InventoryAction;
@@ -106,65 +95,63 @@ struct InventoryAction;
 class InventoryManager
 {
 public:
-	InventoryManager(){}
-	virtual ~InventoryManager(){}
+	InventoryManager() = default;
+	virtual ~InventoryManager() = default;
 
 	// Get an inventory (server and client)
 	virtual Inventory* getInventory(const InventoryLocation &loc){return NULL;}
-    // Set modified (will be saved and sent over network; only on server)
-	virtual void setInventoryModified(const InventoryLocation &loc, bool playerSend = true){}
-    // Send inventory action to server (only on client)
+	// Set modified (will be saved and sent over network; only on server)
+	virtual void setInventoryModified(const InventoryLocation &loc) {}
+	// Send inventory action to server (only on client)
 	virtual void inventoryAction(InventoryAction *a){}
 };
 
-#define IACTION_MOVE 0
-#define IACTION_DROP 1
-#define IACTION_CRAFT 2
+enum class IAction : u16 {
+	Move,
+	Drop,
+	Craft
+};
 
 struct InventoryAction
 {
-	static InventoryAction * deSerialize(std::istream &is);
+	static InventoryAction *deSerialize(std::istream &is);
 
-	virtual u16 getType() const = 0;
+	virtual IAction getType() const = 0;
 	virtual void serialize(std::ostream &os) const = 0;
 	virtual void apply(InventoryManager *mgr, ServerActiveObject *player,
 			IGameDef *gamedef) = 0;
 	virtual void clientApply(InventoryManager *mgr, IGameDef *gamedef) = 0;
-	virtual ~InventoryAction() {};
+	virtual ~InventoryAction() = default;;
 };
 
-struct IMoveAction : public InventoryAction
+struct MoveAction
 {
-	// count=0 means "everything"
-	u16 count;
 	InventoryLocation from_inv;
 	std::string from_list;
-	s16 from_i;
+	s16 from_i = -1;
 	InventoryLocation to_inv;
 	std::string to_list;
-	s16 to_i;
-	bool move_somewhere;
+	s16 to_i = -1;
+};
+
+struct IMoveAction : public InventoryAction, public MoveAction
+{
+	// count=0 means "everything"
+	u16 count = 0;
+	bool move_somewhere = false;
 
 	// treat these as private
 	// related to movement to somewhere
-	bool caused_by_move_somewhere;
-	u32 move_count;
+	bool caused_by_move_somewhere = false;
+	u32 move_count = 0;
 
-	IMoveAction()
-	{
-		count = 0;
-		from_i = -1;
-		to_i = -1;
-		move_somewhere = false;
-		caused_by_move_somewhere = false;
-		move_count = 0;
-	}
+	IMoveAction() = default;
 
 	IMoveAction(std::istream &is, bool somewhere);
 
-	u16 getType() const
+	IAction getType() const
 	{
-		return IACTION_MOVE;
+		return IAction::Move;
 	}
 
 	void serialize(std::ostream &os) const
@@ -186,27 +173,33 @@ struct IMoveAction : public InventoryAction
 	void apply(InventoryManager *mgr, ServerActiveObject *player, IGameDef *gamedef);
 
 	void clientApply(InventoryManager *mgr, IGameDef *gamedef);
+
+	void swapDirections();
+
+	void onTake(const ItemStack &src_item, ServerActiveObject *player) const;
+	void onPut(const ItemStack &src_item, ServerActiveObject *player) const;
+
+	void onMove(int count, ServerActiveObject *player) const;
+
+	int allowPut(const ItemStack &dst_item, ServerActiveObject *player) const;
+
+	int allowTake(const ItemStack &src_item, ServerActiveObject *player) const;
+
+	int allowMove(int try_take_count, ServerActiveObject *player) const;
 };
 
-struct IDropAction : public InventoryAction
+struct IDropAction : public InventoryAction, public MoveAction
 {
 	// count=0 means "everything"
-	u16 count;
-	InventoryLocation from_inv;
-	std::string from_list;
-	s16 from_i;
+	u16 count = 0;
 
-	IDropAction()
-	{
-		count = 0;
-		from_i = -1;
-	}
+	IDropAction() = default;
 
 	IDropAction(std::istream &is);
 
-	u16 getType() const
+	IAction getType() const
 	{
-		return IACTION_DROP;
+		return IAction::Drop;
 	}
 
 	void serialize(std::ostream &os) const
@@ -226,19 +219,16 @@ struct IDropAction : public InventoryAction
 struct ICraftAction : public InventoryAction
 {
 	// count=0 means "everything"
-	u16 count;
+	u16 count = 0;
 	InventoryLocation craft_inv;
 
-	ICraftAction()
-	{
-		count = 0;
-	}
+	ICraftAction() = default;
 
 	ICraftAction(std::istream &is);
 
-	u16 getType() const
+	IAction getType() const
 	{
-		return IACTION_CRAFT;
+		return IAction::Craft;
 	}
 
 	void serialize(std::ostream &os) const
@@ -254,9 +244,6 @@ struct ICraftAction : public InventoryAction
 };
 
 // Crafting helper
-bool getCraftingResult(Inventory *inv, ItemStack& result,
+bool getCraftingResult(Inventory *inv, ItemStack &result,
 		std::vector<ItemStack> &output_replacements,
 		bool decrementInput, IGameDef *gamedef);
-
-#endif
-
